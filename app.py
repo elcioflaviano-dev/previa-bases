@@ -709,14 +709,15 @@ if st.session_state.pagina == "1. Upload de Arquivos":
                     st.error(f"Erro ao processar: {e}")
 
     # Exibição do botão fora do if do processar (para não sumir ao clicar)
+    # Bloco corrigido:
     if st.session_state.processado_sucesso and st.session_state.df_valido is not None:
-        st.success("✅ Arquivos carregados e tratados com sucesso!")[cite: 11]
+        st.success("✅ Arquivos carregados e tratados com sucesso!")
         st.button(
             "Ir para Dados Operacionais ➡️",
             type="primary",
             on_click=navegar_para_dados,
             key="btn_ir_dados"
-        )[cite: 11]
+        )
 
 # ==============================================================================
 # PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (CALENDÁRIO AUTOMÁTICO)
