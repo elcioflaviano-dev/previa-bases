@@ -4,14 +4,71 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(
-    page_title="Painel Operacional - Tratamento Aniel", page_icon="📊", layout="wide"
+    page_title="Painel Operacional - Tratamento Aniel",
+    page_icon="📊",
+    layout="wide",
 )
 
 st.title("📊 Painel Operacional - Tratamento da Base Aniel")
 st.write(
-    "Carregue a base Aniel e os ficheiros do TOA. As tabelas de Baixas, Pontos e"
-    " Descrição de OS já estão integradas no sistema!"
+    "Carregue a base Aniel e os ficheiros do TOA. As tabelas de Baixas, Pontos"
+    " e Descrição de OS já estão integradas no sistema!"
 )
+
+
+# --- FUNÇÃO BLINDADA PARA LEITURA DE FICHEIROS ---
+def ler_arquivo_seguro(uploaded_file):
+  uploaded_file.seek(0)
+  nome = uploaded_file.name.lower()
+
+  if nome.endswith(".csv"):
+    try:
+      return pd.read_csv(uploaded_file, sep=None, engine="python")
+    except Exception:
+      uploaded_file.seek(0)
+      return pd.read_csv(
+          uploaded_file, sep=";", encoding="latin1", on_bad_lines="skip"
+      )
+
+  # Tenta ler como Excel moderno forçando openpyxl
+  try:
+    uploaded_file.seek(0)
+    return pd.read_excel(uploaded_file, engine="openpyxl")
+  except Exception:
+    pass
+
+  # Fallback 1: Tenta ler sem especificar engine ou com xlrd (Excel antigo)
+  try:
+    uploaded_file.seek(0)
+    return pd.read_excel(uploaded_file)
+  except Exception:
+    pass
+
+  # Fallback 2: Ficheiros exportados de sistemas que têm extensão .xlsx mas são CSV/Texto
+  try:
+    uploaded_file.seek(0)
+    return pd.read_csv(uploaded_file, sep=None, engine="python", encoding="utf-8")
+  except Exception:
+    pass
+
+  try:
+    uploaded_file.seek(0)
+    return pd.read_csv(uploaded_file, sep="\t", encoding="latin1")
+  except Exception:
+    pass
+
+  # Fallback 3: Ficheiros exportados como tabela HTML com extensão .xlsx
+  try:
+    uploaded_file.seek(0)
+    dfs = pd.read_html(uploaded_file)
+    if dfs:
+      return dfs[0]
+  except Exception as e:
+    raise ValueError(
+        f"Não foi possível ler o ficheiro '{uploaded_file.name}'. Detalhe"
+        f" técnico: {e}"
+    )
+
 
 # Dicionários de referência integrados diretamente no código (PROCV automático)
 BAIXAS_DICT = {
@@ -331,10 +388,10 @@ DESC_OS_DICT = {
     "VISITA TECNICA NOW": "SERVIÇOS",
 }
 
-# Componentes de Upload na Interface do Streamlit
+# Uploaders na Interface
 uploaded_aniel = st.file_uploader(
     "Carregar Ficheiro ANIEL (.xlsx ou .xlsm)",
-    type=["xlsx", "xlsm"],
+    type=["xlsx", "xlsm", "csv"],
     key="aniel",
 )
 uploaded_toa = st.file_uploader(
@@ -347,101 +404,132 @@ uploaded_toa = st.file_uploader(
 if uploaded_aniel is not None:
   try:
     with st.spinner("A processar os dados e aplicar regras..."):
-      df_aniel = pd.read_excel(uploaded_aniel)
+      df_aniel = ler_arquivo_seguro(uploaded_aniel)
 
       # Unindo os ficheiros do TOA
       df_toa = None
       if uploaded_toa:
-        toa_dfs = []
-        for file in uploaded_toa:
-          if file.name.endswith(".csv"):
-            toa_dfs.append(pd.read_csv(file))
-          else:
-            toa_dfs.append(pd.read_excel(file))
+        toa_dfs = [ler_arquivo_seguro(file) for file in uploaded_toa]
         df_toa = pd.concat(toa_dfs, ignore_index=True)
 
-      # 1. Cruzamento com o TOA
+      # 1. Cruzamento com o TOA (Removendo duplicados de Contrato na base TOA para evitar conflito)
       if df_toa is not None and not df_toa.empty:
-        toa_dict = df_toa.set_index(df_toa.columns[1]).to_dict(orient="index")
+        col_chave_toa = df_toa.columns[1]
+        df_toa_clean = df_toa.copy()
+        df_toa_clean["_chave_"] = (
+            df_toa_clean[col_chave_toa]
+            .astype(str)
+            .str.strip()
+            .str.replace(r"\.0$", "", regex=True)
+        )
+        df_toa_clean = df_toa_clean.drop_duplicates(
+            subset=["_chave_"], keep="first"
+        )
+        toa_dict = df_toa_clean.set_index("_chave_").to_dict(orient="index")
 
         for idx, row in df_aniel.iterrows():
-          contrato = str(row.get("Contrato Cliente", "")).strip()
+          contrato = (
+              str(row.get("Contrato Cliente", "")).strip().replace(".0", "")
+          )
           if contrato in toa_dict:
             match = toa_dict[contrato]
             df_aniel.at[idx, "ST1"] = match.get(df_toa.columns[2], "")
             df_aniel.at[idx, "ST2"] = match.get(df_toa.columns[3], "")
             df_aniel.at[idx, "ST3"] = match.get(df_toa.columns[7], "")
-            df_aniel.at[idx, "CANCELADAS_TEMP"] = match.get(
-                df_toa.columns[5], ""
-            )
+            df_aniel.at[idx, "CANCELADAS"] = match.get(df_toa.columns[5], "")
             df_aniel.at[idx, "PME"] = match.get(df_toa.columns[6], "")
           else:
-            df_aniel.at[idx, "ST1"] = np.nan
-            df_aniel.at[idx, "ST2"] = np.nan
-            df_aniel.at[idx, "ST3"] = np.nan
-            df_aniel.at[idx, "CANCELADAS_TEMP"] = np.nan
-            df_aniel.at[idx, "PME"] = np.nan
+            df_aniel.at[idx, "ST1"] = ""
+            df_aniel.at[idx, "ST2"] = ""
+            df_aniel.at[idx, "ST3"] = ""
+            df_aniel.at[idx, "CANCELADAS"] = ""
+            df_aniel.at[idx, "PME"] = ""
 
-      # 2. Tratamento "N/A" -> PROCV ST3 na tabela de Baixas integrada
+      # 2 a 7. Aplicação das Regras Linha a Linha no Aniel
+      baixas_upper = {k.upper(): v for k, v in BAIXAS_DICT.items()}
+      desc_upper = {k.upper(): v for k, v in DESC_OS_DICT.items()}
+      pontos_upper = {k.upper(): v for k, v in PONTOS_DICT.items()}
+
       for idx, row in df_aniel.iterrows():
-        tipo_os = str(row.get("Tipo de OS", "")).strip().upper()
+        tipo_os_raw = str(row.get("Tipo de OS", "")).strip()
+        tipo_os = (
+            "" if tipo_os_raw.lower() == "nan" else tipo_os_raw.upper()
+        )
+
+        st1_raw = str(row.get("ST1", "")).strip()
+        st1_val = "" if st1_raw.lower() == "nan" else st1_raw
+
+        st2_raw = str(row.get("ST2", "")).strip()
+        st2_val = "" if st2_raw.lower() == "nan" else st2_raw.lower()
+
+        st3_raw = str(row.get("ST3", "")).strip()
+        st3_val = "" if st3_raw.lower() == "nan" else st3_raw.upper()
+
+        # Regra 2: Tratamento "N/A" ou vazio em Tipo de OS -> PROCV ST3 na tabela Baixas
         if tipo_os in ["N/A", "#N/A", ""]:
-          st3_val = str(row.get("ST3", "")).strip()
-          # Procura no dicionário de Baixas
           encontrou = False
-          for k_baixa, v_baixa in BAIXAS_DICT.items():
-            if st3_val.upper() in k_baixa.upper():
-              df_aniel.at[idx, "Tipo de OS"] = v_baixa
+          if st3_val != "":
+            if st3_val in baixas_upper:
+              tipo_os = baixas_upper[st3_val]
               encontrou = True
-              break
+            else:
+              for k_baixa, v_baixa in baixas_upper.items():
+                if st3_val in k_baixa or k_baixa in st3_val:
+                  tipo_os = v_baixa
+                  encontrou = True
+                  break
           if not encontrou:
-            df_aniel.at[idx, "Tipo de OS"] = "EM ABERTO"
+            tipo_os = "EM ABERTO"
 
-      # 3. Tratamento "EM ABERTO" com ST1 vazio -> "SAIU DO TOA"
-      for idx, row in df_aniel.iterrows():
-        tipo_os = str(row.get("Tipo de OS", "")).strip().upper()
-        st1_val = str(row.get("ST1", "")).strip()
+        # Regra 3: "EM ABERTO" com ST1 vazio -> "SAIU DO TOA"
         if tipo_os == "EM ABERTO" and st1_val == "":
-          df_aniel.at[idx, "Tipo de OS"] = "SAIU DO TOA"
+          tipo_os = "SAIU DO TOA"
 
-      # 4. Tratamento ST2 Liberado/Cancelado NETSMS -> "CANCELADO"
-      for idx, row in df_aniel.iterrows():
-        tipo_os = str(row.get("Tipo de OS", "")).strip().upper()
-        st2_val = str(row.get("ST2", "")).lower()
+        # Regra 4: ST2 Liberado/Cancelado NETSMS com "EM ABERTO" -> "CANCELADO"
         if (
             "liberado no sistema netsms" in st2_val
             or "cancelado no sistema netsms" in st2_val
         ) and tipo_os == "EM ABERTO":
-          df_aniel.at[idx, "Tipo de OS"] = "CANCELADO"
+          tipo_os = "CANCELADO"
 
-      # 5. Tratamento ST2 Executado NETSMS -> "PRODUTIVA"
-      for idx, row in df_aniel.iterrows():
-        st2_val = str(row.get("ST2", "")).lower()
+        # Regra 5: ST2 Executado NETSMS -> "PRODUTIVA"
         if "executado no sistema netsms" in st2_val:
-          df_aniel.at[idx, "Tipo de OS"] = "PRODUTIVA"
+          tipo_os = "PRODUTIVA"
 
-      # 6. Regra da coluna Canceladas
-      for idx, row in df_aniel.iterrows():
-        st2_val = str(row.get("ST2", "")).lower()
+        df_aniel.at[idx, "Tipo de OS"] = tipo_os
+
+        # Regra 6: Coluna CANCELADAS baseada no ST2
         if "cancelado" in st2_val:
           df_aniel.at[idx, "CANCELADAS"] = "CANCELADO"
         else:
           df_aniel.at[idx, "CANCELADAS"] = ""
 
-      # 7. Criar colunas Quebras e Atividades usando DESC_OS_DICT e PONTOS_DICT
-      for idx, row in df_aniel.iterrows():
-        tipo_servico = str(row.get("Tipo de Serviço", "")).strip().upper()
-        obs1 = str(row.get("Observação 1", "")).lower()
+        # Regra 7: QUEBRAS, ATIVIDADES e PONTOS PREV.
+        tipo_servico_raw = str(row.get("Tipo de Serviço", "")).strip()
+        tipo_servico = (
+            ""
+            if tipo_servico_raw.lower() == "nan"
+            else tipo_servico_raw.upper()
+        )
 
-        # Quebras via Descrição OS
-        for k_desc, v_desc in DESC_OS_DICT.items():
-          if tipo_servico in k_desc.upper():
-            df_aniel.at[idx, "QUEBRAS"] = v_desc
-            break
+        obs1_raw = str(row.get("Observação 1", "")).strip()
+        obs1 = "" if obs1_raw.lower() == "nan" else obs1_raw.lower()
+
+        # Quebras
+        quebra_val = ""
+        if tipo_servico in desc_upper:
+          quebra_val = desc_upper[tipo_servico]
+        else:
+          for k_desc, v_desc in desc_upper.items():
+            if tipo_servico != "" and tipo_servico in k_desc:
+              quebra_val = v_desc
+              break
+        df_aniel.at[idx, "QUEBRAS"] = quebra_val
 
         # Atividades
+        ts_lower = tipo_servico.lower()
         status_ativ = ""
-        if "const" in tipo_servico.lower():
+        if "const" in ts_lower:
           status_ativ = "CONSTRUÇÃO"
         elif (
             "pon " in obs1
@@ -451,57 +539,80 @@ if uploaded_aniel is not None:
         ):
           status_ativ = "GPON"
           if (
-              "instalacao de cabo gpon" in tipo_servico.lower()
-              or "mudanca de pacote" in tipo_servico.lower()
+              "instalacao de cabo gpon" in ts_lower
+              or "mudanca de pacote" in ts_lower
           ):
             status_ativ = "MIGRAÇÃO"
 
         if status_ativ == "":
           status_ativ = "HFC"
 
-        if (
-            status_ativ == "HFC"
-            and "instalacao de cabo gpon" in tipo_servico.lower()
-        ):
+        if status_ativ == "HFC" and "instalacao de cabo gpon" in ts_lower:
           status_ativ = "MIGRAÇÃO"
 
         df_aniel.at[idx, "ATIVIDADES"] = status_ativ
 
-        # Pontos Previstos via Pontos Aniel
+        # Pontos Previstos
         pontos_prev = row.get("Pontos Prev.", 0)
-        if pd.isna(pontos_prev) or pontos_prev == 0 or pontos_prev == "":
-          for k_ponto, v_ponto in PONTOS_DICT.items():
-            if tipo_servico in k_ponto.upper():
-              df_aniel.at[idx, "Pontos Prev."] = v_ponto
-              break
+        if (
+            pd.isna(pontos_prev)
+            or str(pontos_prev).strip() in ["", "0", "0.0", "nan"]
+        ):
+          if tipo_servico in pontos_upper:
+            df_aniel.at[idx, "Pontos Prev."] = pontos_upper[tipo_servico]
+          else:
+            for k_ponto, v_ponto in pontos_upper.items():
+              if tipo_servico != "" and tipo_servico in k_ponto:
+                df_aniel.at[idx, "Pontos Prev."] = v_ponto
+                break
 
         try:
-          val_p = (
-              str(df_aniel.at[idx, "Pontos Prev."])
-              .replace(".", "")
-              .replace(",", ".")
-          )
+          val_p = str(df_aniel.at[idx, "Pontos Prev."]).strip()
+          if "," in val_p and "." in val_p:
+            val_p = val_p.replace(".", "").replace(",", ".")
+          elif "," in val_p:
+            val_p = val_p.replace(",", ".")
           df_aniel.at[idx, "Pontos Prev."] = float(val_p)
-        except:
+        except Exception:
           pass
+
+      # Reposicionar QUEBRAS e ATIVIDADES logo após "Observação 1" se existir
+      cols = list(df_aniel.columns)
+      if (
+          "Observação 1" in cols
+          and "QUEBRAS" in cols
+          and "ATIVIDADES" in cols
+      ):
+        cols.remove("QUEBRAS")
+        cols.remove("ATIVIDADES")
+        idx_obs = cols.index("Observação 1")
+        cols.insert(idx_obs + 1, "QUEBRAS")
+        cols.insert(idx_obs + 2, "ATIVIDADES")
+        df_aniel = df_aniel[cols]
 
       st.success("Processamento concluído com sucesso!")
       st.dataframe(df_aniel.head(20))
 
-      # Botão para exportar o resultado tratado
+      # Exportar para Excel (ou CSV de segurança se openpyxl não estiver no ambiente)
       output = io.BytesIO()
-      with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df_aniel.to_excel(writer, sheet_name="ANIEL", index=False)
-      processed_data = output.getvalue()
-
-      st.download_button(
-          label="📥 Descarregar Planilha Tratada",
-          data=processed_data,
-          file_name="Planilha_Aniel_Tratada.xlsx",
-          mime=(
-              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          ),
-      )
+      try:
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+          df_aniel.to_excel(writer, sheet_name="ANIEL", index=False)
+        processed_data = output.getvalue()
+        st.download_button(
+            label="📥 Descarregar Planilha Tratada (.xlsx)",
+            data=processed_data,
+            file_name="Planilha_Aniel_Tratada.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+      except Exception:
+        csv_data = df_aniel.to_csv(index=False, sep=";", encoding="utf-8-sig")
+        st.download_button(
+            label="📥 Descarregar Planilha Tratada (.csv)",
+            data=csv_data,
+            file_name="Planilha_Aniel_Tratada.csv",
+            mime="text/csv",
+        )
 
   except Exception as e:
     st.error(f"Ocorreu um erro ao processar os ficheiros: {e}")
