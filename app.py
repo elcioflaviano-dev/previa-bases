@@ -11,7 +11,7 @@ st.set_page_config(
 )
 
 st.title("📈 Apresentação Gerencial de Resultados - Diretoria")
-st.markdown("Painel executivo com cálculos operacionais exatos de Quebra, Eficiência e Projeção.")
+st.markdown("Painel executivo com Projeção calculada por Média Diária × Dias Úteis (Seg a Sáb).")
 
 def ler_arquivo_seguro(uploaded_file):
     uploaded_file.seek(0)
@@ -382,43 +382,57 @@ DESC_OS_DICT = {
     "VISITA TECNICA NOW": "SERVIÇOS",
 }
 
-# --- BARRA LATERAL: UPLOAD E PARÂMETROS ---
+# --- BARRA LATERAL: ENTRADAS E CALENDÁRIO OPERACIONAL ---
 st.sidebar.header("📁 Carregamento de Bases")
 uploaded_aniel = st.sidebar.file_uploader("Ficheiro ANIEL (.xlsx ou .xlsm)", type=["xlsx", "xlsm", "csv"], key="aniel")
 uploaded_toa = st.sidebar.file_uploader("Ficheiros TOA (Múltiplos)", type=["xlsx", "xlsm", "csv"], accept_multiple_files=True, key="toa")
 
 st.sidebar.markdown("---")
-st.sidebar.header("⚙️ Parâmetros Operacionais Manuais")
-dia_atual_mes = st.sidebar.number_input("Dia Atual do Mês", min_value=1, max_value=31, value=19)
-total_dias_mes = st.sidebar.number_input("Dias no Mês", min_value=28, max_value=31, value=31)
+st.sidebar.header("📅 Calendário de Projeção")
+dias_uteis_mes = st.sidebar.number_input("Dias Úteis no Mês (Seg a Sáb)", min_value=20, max_value=31, value=27, help="Multiplicador da média diária (=G3*27)")
+dias_trabalhados = st.sidebar.number_input("Dias Úteis Trabalhados até Hoje", min_value=1, max_value=dias_uteis_mes, value=16, help="Quantidade de dias executados para compor a média (I3:AI3)")
 
 bases_padrao = ["NET-ABCDM", "NET-Guarulhos", "NET-LESTE"]
 inputs_base = {}
 
+# Parâmetros padrão alinhados com o histórico da planilha
 dados_iniciais = {
-    "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "meta_cons": 552, "hoje_cons": 12, "ganho_os": 27},
-    "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "meta_cons": 608, "hoje_cons": 19, "ganho_os": 40},
-    "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "meta_cons": 656, "hoje_cons": 39, "ganho_os": 42}
+    "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "meta_cons": 552, "hoje_cons": 12, "ganho_os": 27, "media_os_mes": 366.5},
+    "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "meta_cons": 608, "hoje_cons": 19, "ganho_os": 40, "media_os_mes": 397.2},
+    "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "meta_cons": 656, "hoje_cons": 39, "ganho_os": 42, "media_os_mes": 379.5}
 }
 
+st.sidebar.markdown("---")
+st.sidebar.header("⚙️ Parâmetros por Base")
 for base in bases_padrao:
     st.sidebar.subheader(f"Base: {base}")
-    d_init = dados_iniciais.get(base, {"parados": 0, "montados": 0, "meta_os": 0, "meta_cons": 0, "hoje_cons": 0, "ganho_os": 0})
+    d_init = dados_iniciais.get(base, {"parados": 0, "montados": 0, "meta_os": 0, "meta_cons": 0, "hoje_cons": 0, "ganho_os": 0, "media_os_mes": 0.0})
     p = st.sidebar.number_input(f"Parados ({base})", value=d_init["parados"], key=f"par_{base}")
     m = st.sidebar.number_input(f"Montados ({base})", value=d_init["montados"], key=f"mon_{base}")
     meta_os = st.sidebar.number_input(f"Meta O.S. Mês ({base})", value=d_init["meta_os"], key=f"meta_os_{base}")
+    
+    # Campo opcional para digitar direto a Média Diária do mês (=MÉDIA(I3:AI3)) ou calcular automaticamente
+    med_input = st.sidebar.number_input(
+        f"Média Diária Acumulada G3 ({base})",
+        value=float(d_init["media_os_mes"]),
+        step=0.1,
+        key=f"med_{base}",
+        help="Caso deixe 0, o sistema usa o Proj. Dia calculado da prévia de hoje como média"
+    )
+    
     meta_cons = st.sidebar.number_input(f"Meta Consultivo ({base})", value=d_init["meta_cons"], key=f"meta_cons_{base}")
     hoje_cons = st.sidebar.number_input(f"Consultivo Hoje ({base})", value=d_init["hoje_cons"], key=f"hoje_cons_{base}")
     ganho_os = st.sidebar.number_input(f"Ganho O.S. ({base})", value=d_init["ganho_os"], key=f"ganho_{base}")
     
     inputs_base[base] = {
         "parados": p, "montados": m, "meta_os": meta_os,
-        "meta_cons": meta_cons, "hoje_cons": hoje_cons, "ganho_os": ganho_os
+        "media_os_mes": med_input, "meta_cons": meta_cons,
+        "hoje_cons": hoje_cons, "ganho_os": ganho_os
     }
 
 if uploaded_aniel is not None:
     try:
-        with st.spinner("Processando tratamento completo e aplicando fórmulas operacionais..."):
+        with st.spinner("Processando tratamento completo e aplicando projeções..."):
             df_aniel = ler_arquivo_seguro(uploaded_aniel)
             df_aniel.columns = [str(c).strip() for c in df_aniel.columns]
 
@@ -598,69 +612,57 @@ if uploaded_aniel is not None:
                 "ADESAO - INSTALACAO DE ASSINATURA DIGITAL"
             ]
 
-            # --- APLICAÇÃO DAS FÓRMULAS INFORMADAS ---
             def calcular_resumo_grupo(df_grp, montados, hoje_cons):
                 tot_os = len(df_grp)
                 os_aberta = len(df_grp[df_grp["Tipo de OS"] == "EM ABERTO"])
                 produtivo = len(df_grp[df_grp["Tipo de OS"] == "PRODUTIVA"])
                 
-                # Quebra Geral (Improdutiva + Cancelada)
+                # FÓRMULA: QUEBRA = quebra / (quebra + produtivo)
                 quebra_geral = len(df_grp[df_grp["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])])
-                
-                # FÓRMULA 1: QUEBRA = quebra / (quebra + produtivo)
                 denom_geral = (quebra_geral + produtivo)
                 pct_quebra_geral = (quebra_geral / denom_geral) if denom_geral > 0 else 0.0
                 
-                # FÓRMULA 2: EFIC = 1 - a % de quebras
+                # FÓRMULA: EFIC = 1 - a % de quebras
                 eficiencia = max(0.0, 1.0 - pct_quebra_geral)
                 
-                # FÓRMULA 3: PROJ = produtivo + (em aberto * eficiencia)
-                proj_exec = produtivo + (os_aberta * eficiencia)
+                # FÓRMULA: PROJ = produtivo + (em aberto * eficiencia)
+                proj_exec_dia = produtivo + (os_aberta * eficiencia)
                 
                 pontos = df_grp[df_grp["Tipo de OS"] == "PRODUTIVA"]["Pontos Prev."].sum()
-                
                 media_os = (produtivo / montados) if montados > 0 else 0.0
                 os_sem_consult = max(0, produtivo - hoje_cons)
                 
                 os_canc = len(df_grp[df_grp["CANCELADAS"] == "CANCELADO"])
                 saiu_toa = len(df_grp[df_grp["Tipo de OS"] == "SAIU DO TOA"])
 
-                # Função auxiliar para calcular % quebra com a fórmula informada: quebra / (quebra + produtivo)
                 def calc_quebra_pct(df_sub):
                     q = len(df_sub[df_sub["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])])
                     p = len(df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"])
                     den = q + p
                     return (q / den * 100) if den > 0 else 0.0
 
-                # Quebra INS
                 df_ins = df_grp[df_grp["QUEBRAS"] == "INSTALAÇÃO"]
                 quebra_ins = calc_quebra_pct(df_ins)
 
-                # Quebra SERV
                 df_serv = df_grp[df_grp["QUEBRAS"] == "SERVIÇOS"]
                 quebra_serv = calc_quebra_pct(df_serv)
 
-                # Quebra ND
                 df_nd = df_grp[df_grp["Tipo de Serviço"].isin(servicos_nd)]
                 tot_nd = len(df_nd)
                 quebra_nd_pct = calc_quebra_pct(df_nd)
 
-                # GPON
                 df_gpon = df_grp[df_grp["ATIVIDADES"] == "GPON"]
                 tot_gpon = len(df_gpon)
                 quebra_gpon = calc_quebra_pct(df_gpon)
 
-                # MIGRAÇÃO
                 df_mig = df_grp[df_grp["ATIVIDADES"] == "MIGRAÇÃO"]
                 tot_mig = len(df_mig)
                 quebra_mig = calc_quebra_pct(df_mig)
                 mig_canc = len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"])
 
-                # RETORNO
                 df_ret = df_grp[df_grp["QUEBRAS"] == "RETORNO"]
                 retorno_wo = len(df_ret)
 
-                # PME
                 df_pme = df_grp[df_grp["PME"].astype(str).str.strip() != ""]
                 tot_pme = len(df_pme)
                 quebra_pme = calc_quebra_pct(df_pme)
@@ -673,7 +675,7 @@ if uploaded_aniel is not None:
                     "Efic. (%)": f"{eficiencia * 100:.1f}%",
                     "Média O.S.": round(media_os, 1),
                     "O.S. Exec.": produtivo,
-                    "Proj. Dia": round(proj_exec, 1),
+                    "Proj. Dia": round(proj_exec_dia, 1),
                     "O.S Sem Consult": os_sem_consult,
                     "Quebra INS (%)": f"{quebra_ins:.1f}%",
                     "Quebra SERV (%)": f"{quebra_serv:.1f}%",
@@ -690,12 +692,11 @@ if uploaded_aniel is not None:
                     "Total PME": tot_pme,
                     "Quebra PME": f"{quebra_pme:.1f}%",
                     "Canc. PME": pme_canc,
-                    # Dados brutos
                     "_raw_tot_os": tot_os,
                     "_raw_os_aberta": os_aberta,
                     "_raw_produtivo": produtivo,
                     "_raw_quebra_geral": quebra_geral,
-                    "_raw_proj_exec": proj_exec,
+                    "_raw_proj_dia": proj_exec_dia,
                     "_raw_pontos": pontos,
                 }
 
@@ -705,10 +706,13 @@ if uploaded_aniel is not None:
                 inp = inputs_base[base]
                 res_base = calcular_resumo_grupo(df_b, inp["montados"], inp["hoje_cons"])
                 
-                # Projeção O.S. Mensal ponderada com o Proj. Dia calculado
-                proj_dia_base = res_base["_raw_proj_exec"]
-                proj_os_mes = round((proj_dia_base * total_dias_mes)) if dia_atual_mes == 1 else round((proj_dia_base / dia_atual_mes) * total_dias_mes)
-                proj_cons = round((inp["hoje_cons"] / dia_atual_mes) * total_dias_mes) if dia_atual_mes > 0 else 0
+                # --- APLICAÇÃO EXATA DA FÓRMULA DE PROJEÇÃO: =G3*27 ---
+                # Se G3 foi digitado na barra lateral, usa o valor; caso contrário, usa o Proj. Dia calculado
+                media_g3 = inp["media_os_mes"] if inp["media_os_mes"] > 0 else res_base["_raw_proj_dia"]
+                proj_os_mes = round(media_g3 * dias_uteis_mes)
+                
+                # Projeção Consultivo
+                proj_cons = round((inp["hoje_cons"] / dias_trabalhados) * dias_uteis_mes) if dias_trabalhados > 0 else 0
 
                 linhas_gerenciais.append({
                     "Base": base,
@@ -716,6 +720,7 @@ if uploaded_aniel is not None:
                     "Parados": inp["parados"],
                     "Montados": inp["montados"],
                     "Meta O.S.": inp["meta_os"],
+                    "Média G3": round(media_g3, 1),
                     "Proj. O.S.": proj_os_mes,
                     "Meta Consult": inp["meta_cons"],
                     "Proj. Consult": proj_cons,
@@ -729,13 +734,18 @@ if uploaded_aniel is not None:
                     df_s = df_b[df_b["Supervisor"] == sup]
                     m_sup = round(inp["montados"] / len(supervisores)) if len(supervisores) > 0 else 1
                     res_sup = calcular_resumo_grupo(df_s, m_sup, 0)
+                    
+                    # Projeção individual do supervisor baseada no seu Proj. Dia
+                    proj_sup_mes = round(res_sup["_raw_proj_dia"] * dias_uteis_mes)
+                    
                     linhas_gerenciais.append({
                         "Base": base,
                         "Supervisor": sup,
                         "Parados": "",
                         "Montados": m_sup,
                         "Meta O.S.": "",
-                        "Proj. O.S.": "",
+                        "Média G3": round(res_sup["_raw_proj_dia"], 1),
+                        "Proj. O.S.": proj_sup_mes,
                         "Meta Consult": "",
                         "Proj. Consult": "",
                         "Hoje Consult": "",
@@ -753,27 +763,27 @@ if uploaded_aniel is not None:
             tot_quebra_global = sum(i["_raw_quebra_geral"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
             tot_pontos_global = sum(i["_raw_pontos"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
             tot_montados_global = sum(inputs_base[b]["montados"] for b in bases_padrao)
+            tot_proj_os_global = sum(i["Proj. O.S."] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
 
             den_global = tot_quebra_global + tot_prod_global
             pct_quebra_global = (tot_quebra_global / den_global) if den_global > 0 else 0.0
             efic_global = max(0.0, 1.0 - pct_quebra_global)
-            proj_dia_global = tot_prod_global + (tot_aberta_global * efic_global)
             media_global = (tot_prod_global / tot_montados_global) if tot_montados_global > 0 else 0.0
 
             c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("Total O.S.", f"{tot_os_global:,}".replace(",", "."))
             c2.metric("O.S. Executadas", f"{tot_prod_global:,}".replace(",", "."))
-            c3.metric("Proj. Dia (Calculada)", f"{proj_dia_global:,.1f}".replace(",", "."))
+            c3.metric(f"Projeção Mês ({dias_uteis_mes} d.u.)", f"{tot_proj_os_global:,}".replace(",", "."))
             c4.metric("Efic. Global", f"{efic_global * 100:.1f}%")
             c5.metric("Média O.S. / Téc", f"{media_global:.1f}")
             c6.metric("Técnicos Montados", tot_montados_global)
 
             st.markdown("---")
 
-            # --- TABELA EXECUTIVA POR BASE ---
+            # --- TABELA EXECUTIVA POR BASE (DIRETORIA) ---
             st.markdown("### 🏢 Resumo Consolidado por Base Operacional")
             cols_base_apres = [
-                "Base", "Parados", "Montados", "Meta O.S.", "Proj. O.S.", "Hoje Consult",
+                "Base", "Parados", "Montados", "Meta O.S.", "Média G3", "Proj. O.S.", "Meta Consult", "Proj. Consult", "Hoje Consult",
                 "TOTAL O.S.", "O.S. ABERTA", "Pontos", "Efic. (%)", "Média O.S.", "O.S. Exec.", "Proj. Dia", "O.S Sem Consult",
                 "Quebra INS (%)", "Quebra SERV (%)", "Quebra ND (%)", "O.S. Canc.", "Saiu TOA", "Ganho O.S.",
                 "Total GPON", "Quebra GPON", "Total MIG", "Quebra MIG", "Total PME", "Quebra PME"
@@ -787,7 +797,7 @@ if uploaded_aniel is not None:
             
             cols_sup_apres = [
                 "Base", "Supervisor", "Montados", "TOTAL O.S.", "O.S. ABERTA", "Pontos", "Efic. (%)",
-                "Média O.S.", "O.S. Exec.", "Proj. Dia", "Quebra INS (%)", "Quebra SERV (%)", "Quebra ND (%)",
+                "Média O.S.", "O.S. Exec.", "Proj. Dia", "Proj. O.S.", "Quebra INS (%)", "Quebra SERV (%)", "Quebra ND (%)",
                 "O.S. Canc.", "Saiu TOA", "Total GPON", "Total MIG", "Total PME", "Quebra PME"
             ]
             
@@ -796,7 +806,7 @@ if uploaded_aniel is not None:
             else:
                 st.dataframe(df_painel[df_painel["Base"] == base_selecionada][cols_sup_apres].reset_index(drop=True), use_container_width=True)
 
-            # --- EXPORTAÇÃO EXCEL COM ABAS ---
+            # --- EXPORTAÇÃO EXCEL COM DUAS ABAS ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
                 df_painel.to_excel(writer, sheet_name="RESUMO_DIRETORIA", index=False)
