@@ -71,22 +71,6 @@ def limpar_texto(val):
     s = re.sub(r"\s+", " ", s)
     return s
 
-def converter_para_float(val):
-    if pd.isna(val):
-        return None
-    s = str(val).strip()
-    if s == "" or s.lower() == "nan":
-        return None
-    s = s.replace(" ", "")
-    if "," in s and "." in s:
-        s = s.replace(".", "").replace(",", ".")
-    elif "," in s:
-        s = s.replace(",", ".")
-    try:
-        return float(s)
-    except ValueError:
-        return None
-
 # Dicionários de referência integrados
 BAIXAS_DICT = {
     "100 - AGENDAMENTO NAO CUMPRIDO": "IMPRODUTIVA",
@@ -471,7 +455,20 @@ if uploaded_aniel is not None:
                         df_aniel.at[idx, "ST3"] = ""
                         df_aniel.at[idx, "PME"] = ""
 
-            # Dicionários normalizados em maiúsculas e sem espaços extras
+            # Garantir conversão segura da coluna Pontos Prev. para float para evitar erro de tipo string
+            if "Pontos Prev." not in df_aniel.columns:
+                df_aniel["Pontos Prev."] = 0.0
+            else:
+                df_aniel["Pontos Prev."] = (
+                    df_aniel["Pontos Prev."]
+                    .astype(str)
+                    .str.replace(" ", "", regex=False)
+                    .str.replace(".", "", regex=False)
+                    .str.replace(",", ".", regex=False)
+                )
+                df_aniel["Pontos Prev."] = pd.to_numeric(df_aniel["Pontos Prev."], errors="coerce").fillna(0.0)
+
+            # Dicionários normalizados
             baixas_norm = {limpar_texto(k): v for k, v in BAIXAS_DICT.items()}
             desc_norm = {limpar_texto(k): v for k, v in DESC_OS_DICT.items()}
             pontos_norm = {limpar_texto(k): float(v) for k, v in PONTOS_DICT.items()}
@@ -562,11 +559,9 @@ if uploaded_aniel is not None:
 
                 df_aniel.at[idx, "ATIVIDADES"] = status_ativ
 
-                # --- PROCV ROBUSTO: Pontos Prev. ---
-                pontos_atual = converter_para_float(row.get("Pontos Prev."))
-                
-                # Se for nulo, vazio ou igual a zero, faz o PROCV
-                if pontos_atual is None or pontos_atual == 0.0:
+                # --- PROCV Pontos Prev. ---
+                pontos_val = float(df_aniel.at[idx, "Pontos Prev."])
+                if pontos_val == 0.0:
                     ponto_encontrado = None
                     if tipo_servico_norm in pontos_norm:
                         ponto_encontrado = pontos_norm[tipo_servico_norm]
@@ -577,10 +572,6 @@ if uploaded_aniel is not None:
                                 break
                     if ponto_encontrado is not None:
                         df_aniel.at[idx, "Pontos Prev."] = float(ponto_encontrado)
-                    else:
-                        df_aniel.at[idx, "Pontos Prev."] = 0.0
-                else:
-                    df_aniel.at[idx, "Pontos Prev."] = float(pontos_atual)
 
             # Manter exclusivamente as 16 colunas finais alinhadas
             colunas_finais = [
