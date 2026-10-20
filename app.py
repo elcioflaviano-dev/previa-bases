@@ -128,6 +128,17 @@ if "supervisores_por_base" not in st.session_state:
 if "processado_sucesso" not in st.session_state:
     st.session_state.processado_sucesso = False
 
+bases_config = [
+    {"label": "ABCDM", "projeto": "NET-ABCDM"},
+    {"label": "Guarulhos", "projeto": "NET-Guarulhos"},
+    {"label": "Leste", "projeto": "NET-LESTE"}
+]
+
+for item in bases_config:
+    proj = item["projeto"]
+    if f"exp_{proj}" not in st.session_state:
+        st.session_state[f"exp_{proj}"] = False
+
 def ir_para_passo_2():
     st.session_state["pagina_atual"] = "2. Dados Operacionais por Base"
 
@@ -510,8 +521,6 @@ DESC_OS_DICT = {
     "VISITA TECNICA NOW": "SERVIÇOS",
 }
 
-bases_padrao = ["ABCDM", "Guarulhos", "LESTE"]
-
 # ==============================================================================
 # PÁGINA 1: UPLOAD DE ARQUIVOS
 # ==============================================================================
@@ -697,9 +706,10 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                     st.session_state.df_aniel_full = df_aniel
 
                     sup_map = {}
-                    for b in bases_padrao:
-                        sups = sorted(df_valido[df_valido["Projeto"].str.upper() == b.upper()]["Supervisor"].unique().tolist())
-                        sup_map[b] = sups
+                    for item in bases_config:
+                        b_proj = item["projeto"]
+                        sups = sorted(df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()]["Supervisor"].unique().tolist())
+                        sup_map[b_proj] = sups
                     st.session_state.supervisores_por_base = sup_map
                     st.session_state.processado_sucesso = True
 
@@ -742,43 +752,45 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         st.session_state["data_formatada"] = data_formatada
 
         defaults = {
-            "ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "meta_cons": 552, "hoje_cons": 12, "ganho_os": 27,
+            "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "meta_cons": 552, "hoje_cons": 12, "ganho_os": 27,
                           "sup_parados": {"EDSON MARCO PINHEIRO": 3, "MAICON APARECIDO FARIA": 1, "NELSON ALVES OLIVEIRA JUNIOR": 0},
                           "sup_montados": {"EDSON MARCO PINHEIRO": 23, "MAICON APARECIDO FARIA": 22, "NELSON ALVES OLIVEIRA JUNIOR": 23}},
-            "Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "meta_cons": 608, "hoje_cons": 19, "ganho_os": 40,
+            "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "meta_cons": 608, "hoje_cons": 19, "ganho_os": 40,
                               "sup_parados": {"ADRIANO NASCIMENTO DA SILVA": 0, "DANIELE BARBOSA DE OLIVEIRA": 3, "FERNANDO CESAR COELHO RAMOS": 2, "PALOMA REGINA SILVA BATISTA": 1},
                               "sup_montados": {"ADRIANO NASCIMENTO DA SILVA": 20, "DANIELE BARBOSA DE OLIVEIRA": 20, "FERNANDO CESAR COELHO RAMOS": 19, "PALOMA REGINA SILVA BATISTA": 19}},
-            "LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "meta_cons": 656, "hoje_cons": 39, "ganho_os": 42,
+            "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "meta_cons": 656, "hoje_cons": 39, "ganho_os": 42,
                           "sup_parados": {"ALAN DE ANDRADE DIAS": 2, "ELISANGELA CASSIMIRO GONCALVES": 0, "FRANCISCO GERALDO CARVALHO JUNIOR": 0, "JOAO CARLOS FERREIRA MIRON": 3},
                           "sup_montados": {"ALAN DE ANDRADE DIAS": 26, "ELISANGELA CASSIMIRO GONCALVES": 11, "FRANCISCO GERALDO CARVALHO JUNIOR": 26, "JOAO CARLOS FERREIRA MIRON": 17}}
         }
 
-        tabs = st.tabs(["ABCDM", "Guarulhos", "LESTE"])
-        for i, b in enumerate(bases_padrao):
+        tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
+        for i, item in enumerate(bases_config):
+            b_label = item["label"]
+            b_proj = item["projeto"]
             with tabs[i]:
-                d = defaults.get(b, {})
+                d = defaults.get(b_proj, {})
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
-                    st.number_input(f"Total Parados ({b})", value=d.get("parados", 0), key=f"inp_par_{b}")
-                    st.number_input(f"Total Montados ({b})", value=d.get("montados", 0), key=f"inp_mon_{b}")
+                    st.number_input(f"Total Parados ({b_label})", value=d.get("parados", 0), key=f"inp_par_{b_proj}")
+                    st.number_input(f"Total Montados ({b_label})", value=d.get("montados", 0), key=f"inp_mon_{b_proj}")
                 with c2:
-                    st.number_input(f"Meta O.S. Mês ({b})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b}")
-                    st.number_input(f"Ganho O.S. ({b})", value=d.get("ganho_os", 0), key=f"inp_ganho_{b}")
+                    st.number_input(f"Meta O.S. Mês ({b_label})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b_proj}")
+                    st.number_input(f"Ganho O.S. ({b_label})", value=d.get("ganho_os", 0), key=f"inp_ganho_{b_proj}")
                 with c3:
-                    st.number_input(f"Meta Consultivo ({b})", value=d.get("meta_cons", 0), key=f"inp_meta_c_{b}")
+                    st.number_input(f"Meta Consultivo ({b_label})", value=d.get("meta_cons", 0), key=f"inp_meta_c_{b_proj}")
                 with c4:
-                    st.number_input(f"Hoje Consultivo ({b})", value=d.get("hoje_cons", 0), key=f"inp_hoje_c_{b}")
+                    st.number_input(f"Hoje Consultivo ({b_label})", value=d.get("hoje_cons", 0), key=f"inp_hoje_c_{b_proj}")
                 
                 st.markdown("##### 👥 Equipa de Supervisores:")
-                sups_base = st.session_state.supervisores_por_base.get(b, [])
+                sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
                 col_s1, col_s2 = st.columns(2)
                 for sup in sups_base:
                     def_p = d.get("sup_parados", {}).get(sup, 0)
                     def_m = d.get("sup_montados", {}).get(sup, 20)
                     with col_s1:
-                        st.number_input(f"Parados: {sup}", value=def_p, key=f"p_{b}_{sup}")
+                        st.number_input(f"Parados: {sup}", value=def_p, key=f"p_{b_proj}_{sup}")
                     with col_s2:
-                        st.number_input(f"Montados: {sup}", value=def_m, key=f"m_{b}_{sup}")
+                        st.number_input(f"Montados: {sup}", value=def_m, key=f"m_{b_proj}_{sup}")
 
         st.markdown("---")
         st.button(
@@ -789,7 +801,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         )
 
 # ==============================================================================
-# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (DIRETORIA LIMPA COM EXPANDERS)
+# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (DIRETORIA COM BOTÕES +/- AO LADO DA BASE)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
@@ -809,9 +821,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         ]
 
         soma_hist_fallback = {
-            "ABCDM": 5865,
-            "Guarulhos": 6356,
-            "LESTE": 6079
+            "NET-ABCDM": 5865,
+            "NET-Guarulhos": 6356,
+            "NET-LESTE": 6079
         }
 
         def calcular_metricas(df_sub, montados, hoje_c):
@@ -928,22 +940,25 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
         metricas_bases = {}
 
-        for b in bases_padrao:
-            df_b = df_valido[df_valido["Projeto"].str.upper() == b.upper()]
-            p_base = st.session_state.get(f"inp_par_{b}", 4 if b == "ABCDM" else (6 if b == "Guarulhos" else 5))
-            m_base = st.session_state.get(f"inp_mon_{b}", 68 if b == "ABCDM" else (76 if b == "NGuarulhos" else 80))
-            meta_os_b = st.session_state.get(f"inp_meta_os_{b}", 11800 if b == "ABCDM" else 12200)
-            meta_c_b = st.session_state.get(f"inp_meta_c_{b}", 552 if b == "ABCDM" else (608 if b == "NGuarulhos" else 656))
-            hoje_c_b = st.session_state.get(f"inp_hoje_c_{b}", 12 if b == "ABCDM" else (19 if b == "NGuarulhos" else 39))
-            ganho_b = st.session_state.get(f"inp_ganho_{b}", 27 if b == "ABCDM" else (40 if b == "Guarulhos" else 42))
+        for item in bases_config:
+            b_label = item["label"]
+            b_proj = item["projeto"]
+            
+            df_b = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()]
+            p_base = st.session_state.get(f"inp_par_{b_proj}", 4 if "ABCDM" in b_proj else (6 if "Guarulhos" in b_proj else 5))
+            m_base = st.session_state.get(f"inp_mon_{b_proj}", 68 if "ABCDM" in b_proj else (76 if "Guarulhos" in b_proj else 80))
+            meta_os_b = st.session_state.get(f"inp_meta_os_{b_proj}", 11800 if "ABCDM" in b_proj else 12200)
+            meta_c_b = st.session_state.get(f"inp_meta_c_{b_proj}", 552 if "ABCDM" in b_proj else (608 if "Guarulhos" in b_proj else 656))
+            hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 12 if "ABCDM" in b_proj else (19 if "Guarulhos" in b_proj else 39))
+            ganho_b = st.session_state.get(f"inp_ganho_{b_proj}", 27 if "ABCDM" in b_proj else (40 if "Guarulhos" in b_proj else 42))
 
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
-            salvar_historico_sheets(data_formatada, b, res_b["produtivo"])
-            media_acum_b = obter_media_acumulada_sheets(b, res_b["produtivo"], dias_trab)
+            salvar_historico_sheets(data_formatada, b_proj, res_b["produtivo"])
+            media_acum_b = obter_media_acumulada_sheets(b_proj, res_b["produtivo"], dias_trab)
             
             if media_acum_b <= res_b["produtivo"]:
-                media_acum_b = (soma_hist_fallback.get(b, 0) + res_b["produtivo"]) / max(1, dias_trab)
+                media_acum_b = (soma_hist_fallback.get(b_proj, 0) + res_b["produtivo"]) / max(1, dias_trab)
                 
             proj_os_b = int(round(media_acum_b * dias_uteis))
             proj_c_b = int(round((hoje_c_b / dias_trab) * dias_uteis)) if dias_trab > 0 else 0
@@ -961,21 +976,34 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             g_raw_nd_q += res_b["_raw_q_nd"]; g_raw_gpon_q += res_b["_raw_q_gpon"]
             g_raw_mig_q += res_b["_raw_q_mig"]; g_raw_pme_q += res_b["_raw_q_pme"]
 
-            metricas_bases[b] = {
+            metricas_bases[b_proj] = {
                 "res": res_b, "p_base": p_base, "m_base": m_base, "meta_os": meta_os_b,
                 "proj_os": proj_os_b, "meta_c": meta_c_b, "proj_c": proj_c_b, "hoje_c": hoje_c_b,
-                "os_consult": os_consult_b, "ganho": ganho_b
+                "os_consult": os_consult_b, "ganho": ganho_b, "label": b_label
             }
 
-        # --- TABELA PRINCIPAL DA DIRETORIA LIMPA ---
+        # --- CONSTRUÇÃO DA TABELA COM OS BOTÕES +/- DIRETAMENTE AO LADO DA BASE ---
         tabela_html = [gerar_cabecalho_html()]
 
-        for b in bases_padrao:
-            m = metricas_bases[b]
+        for item in bases_config:
+            b_label = item["label"]
+            b_proj = item["projeto"]
+            m = metricas_bases[b_proj]
             res = m["res"]
+            
+            # Linha da Base com botão compacto alinhado à esquerda
+            col_lbl, col_btn = st.columns([0.8, 0.2])
+            with col_lbl:
+                st.markdown(f"**Base: {b_label}**")
+            with col_btn:
+                simbolo = "➖" if st.session_state[f"exp_{b_proj}"] else "➕"
+                if st.button(f"{simbolo} Supervisores", key=f"btn_{b_proj}"):
+                    st.session_state[f"exp_{b_proj}"] = not st.session_state[f"exp_{b_proj}"]
+                    st.rerun()
+
             tabela_html.append(
                 f'<tr class="tr-base">'
-                f'<td style="text-align: left; padding-left: 8px;">{b}</td>'
+                f'<td style="text-align: left; padding-left: 8px;">{b_label}</td>'
                 f'<td>{m["p_base"]}</td>'
                 f'<td class="col-destaque-amarelo">{m["m_base"]}</td>'
                 f'<td>{m["meta_os"]:,.0f}</td>'
@@ -1009,6 +1037,42 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 f'<td>{res["canc_pme"]}</td>'
                 f'</tr>'
             )
+
+            # Se o botão estiver ativado para esta base, insere os supervisores logo abaixo
+            if st.session_state[f"exp_{b_proj}"]:
+                sups_b = st.session_state.supervisores_por_base.get(b_proj, [])
+                for s in sups_b:
+                    df_s = df_valido[(df_valido["Projeto"].str.upper() == b_proj.upper()) & (df_valido["Supervisor"] == s)]
+                    p_sup = st.session_state.get(f"p_{b_proj}_{s}", 0)
+                    m_sup = st.session_state.get(f"m_{b_proj}_{s}", 20)
+                    res_s = calcular_metricas(df_s, m_sup, 0)
+                    primeiro_nome = s.split()[0]
+                    
+                    tabela_html.append(
+                        f'<tr class="tr-sup">'
+                        f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
+                        f'<td>{p_sup}</td>'
+                        f'<td class="col-destaque-amarelo">{m_sup}</td>'
+                        f'<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>'
+                        f'<td>{res_s["tot_os"]}</td>'
+                        f'<td>{res_s["os_aberta"]}</td>'
+                        f'<td>{res_s["pontos"]}</td>'
+                        f'<td>{res_s["efic"]:.1f}%</td>'
+                        f'<td class="col-destaque-azul">{res_s["media_os"]:.1f}</td>'
+                        f'<td>{res_s["produtivo"]}</td>'
+                        f'<td>-</td>'
+                        f'<td>{res_s["q_ins"]:.1f}%</td>'
+                        f'<td>{res_s["q_serv"]:.1f}%</td>'
+                        f'<td>{res_s["q_nd"]:.1f}%</td>'
+                        f'<td>-</td>'
+                        f'<td>{res_s["os_canc"]}</td>'
+                        f'<td>{res_s["saiu_toa"]}</td>'
+                        f'<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>'
+                        f'<td>{res_s["tot_pme"]}</td>'
+                        f'<td>{res_s["q_pme"]:.1f}%</td>'
+                        f'<td>{res_s["canc_pme"]}</td>'
+                        f'</tr>'
+                    )
 
         g_den_geral = g_quebra + g_prod
         g_efic = (max(0.0, 1.0 - (g_quebra / g_den_geral)) * 100) if g_den_geral > 0 else 0.0
@@ -1053,7 +1117,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             f'<td>{g_retorno}</td>'
             f'<td>{g_pme}</td>'
             f'<td>{g_q_pme:.1f}%</td>'
-            f'<td>{g_pme_canc}</td>'
+            f'<td>{g_canc_pme}</td>'
             f'</tr>'
             f'</tbody>'
             f'</table>'
@@ -1061,50 +1125,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
         st.markdown("".join(tabela_html), unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
-
-        # --- SEÇÃO EXPANSÍVEL CLEAN PARA OS SUPERVISORES ---
-        with st.expander("🔍 Detalhamento por Supervisores (Expandir / Recolher)"):
-            for b in bases_padrao:
-                df_b = df_valido[df_valido["Projeto"].str.upper() == b.upper()]
-                sups_b = st.session_state.supervisores_por_base.get(b, [])
-                
-                st.markdown(f"**Base: {b}**")
-                tabela_sup_html = [gerar_cabecalho_html()]
-                for s in sups_b:
-                    df_s = df_b[df_b["Supervisor"] == s]
-                    p_sup = st.session_state.get(f"p_{b}_{s}", 0)
-                    m_sup = st.session_state.get(f"m_{b}_{s}", 20)
-                    res_s = calcular_metricas(df_s, m_sup, 0)
-                    primeiro_nome = s.split()[0]
-                    
-                    tabela_sup_html.append(
-                        f'<tr class="tr-sup">'
-                        f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
-                        f'<td>{p_sup}</td>'
-                        f'<td class="col-destaque-amarelo">{m_sup}</td>'
-                        f'<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>'
-                        f'<td>{res_s["tot_os"]}</td>'
-                        f'<td>{res_s["os_aberta"]}</td>'
-                        f'<td>{res_s["pontos"]}</td>'
-                        f'<td>{res_s["efic"]:.1f}%</td>'
-                        f'<td class="col-destaque-azul">{res_s["media_os"]:.1f}</td>'
-                        f'<td>{res_s["produtivo"]}</td>'
-                        f'<td>-</td>'
-                        f'<td>{res_s["q_ins"]:.1f}%</td>'
-                        f'<td>{res_s["q_serv"]:.1f}%</td>'
-                        f'<td>{res_s["q_nd"]:.1f}%</td>'
-                        f'<td>-</td>'
-                        f'<td>{res_s["os_canc"]}</td>'
-                        f'<td>{res_s["saiu_toa"]}</td>'
-                        f'<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>'
-                        f'<td>{res_s["tot_pme"]}</td>'
-                        f'<td>{res_s["q_pme"]:.1f}%</td>'
-                        f'<td>{res_s["canc_pme"]}</td>'
-                        f'</tr>'
-                    )
-                tabela_sup_html.append('</tbody></table>')
-                st.markdown("".join(tabela_sup_html), unsafe_allow_html=True)
-                st.markdown("<br>", unsafe_allow_html=True)
 
         if st.session_state.df_aniel_full is not None:
             output = io.BytesIO()
