@@ -4,15 +4,15 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(
-    page_title="Painel Operacional - Tratamento Aniel",
+    page_title="PRÉVIA OPERACIONAL DAS BASES TOTALE",
     page_icon="📊",
     layout="wide",
 )
 
-st.title("📊 Painel Operacional - Tratamento da Base Aniel")
+st.title("📊 PRÉVIA OPERACIONAL DAS BASES TOTALE")
 st.write(
-    "Carregue a base Aniel e os arquivos do TOA para gerar a estrutura exata das"
-    " 16 colunas operacionais."
+    "Carregue a base Aniel e os arquivos do TOA para preenchimento automático"
+    " das colunas operacionais."
 )
 
 
@@ -61,6 +61,15 @@ def ler_arquivo_seguro(uploaded_file):
       return dfs[0]
   except Exception as e:
     raise ValueError(f"Não foi possível ler o arquivo: {e}")
+
+
+def limpar_chave(val):
+  if pd.isna(val):
+    return ""
+  s = str(val).strip()
+  if s.endswith(".0"):
+    s = s[:-2]
+  return s
 
 
 # Dicionários de referência integrados (PROCV automático)
@@ -398,62 +407,111 @@ if uploaded_aniel is not None:
   try:
     with st.spinner("A processar os dados e estruturar o cabeçalho..."):
       df_aniel = ler_arquivo_seguro(uploaded_aniel)
-
-      # Padronizar nomes de colunas removendo espaços extras
       df_aniel.columns = [str(c).strip() for c in df_aniel.columns]
 
-      # Garantir a criação das colunas do TOA se não existirem no arquivo
-      colunas_necessarias = ["ST1", "ST2", "ST3", "CANCELADAS", "PME"]
-      for col in colunas_necessarias:
+      colunas_obrigatorias = ["ST1", "ST2", "ST3", "CANCELADAS", "PME"]
+      for col in colunas_obrigatorias:
         if col not in df_aniel.columns:
           df_aniel[col] = ""
 
       # Unindo os arquivos do TOA
       df_toa = None
       if uploaded_toa:
-        toa_dfs = [ler_arquivo_seguro(file) for file in uploaded_toa]
+        toa_dfs = []
+        for file in uploaded_toa:
+          tdf = ler_arquivo_seguro(file)
+          tdf.columns = [str(c).strip() for c in tdf.columns]
+          toa_dfs.append(tdf)
         df_toa = pd.concat(toa_dfs, ignore_index=True)
 
-      # 1. Cruzamento com o TOA
+      # 1. Cruzamento Inteligente com o TOA
       if df_toa is not None and not df_toa.empty:
-        col_chave_toa = df_toa.columns[1]
+        # Descobre a coluna de chave no TOA (Coluna B / índice 1 ou coluna com nome de contrato)
+        col_chave_toa = None
+        for c in df_toa.columns:
+          if any(
+              k in c.lower() for k in ["contrato", "conta", "cliente", "os_id"]
+          ):
+            col_chave_toa = c
+            break
+        if col_chave_toa is None and len(df_toa.columns) > 1:
+          col_chave_toa = df_toa.columns[1]
+
+        # Mapeia as colunas de dados no TOA (por nome ou posição fixa da macro)
+        # Coluna ST1 (Status): coluna 2
+        col_st1_toa = (
+            df_toa.columns[2]
+            if len(df_toa.columns) > 2
+            else df_toa.columns[0]
+        )
+        # Coluna ST2 (NETSMS / Mensagem): coluna 3
+        col_st2_toa = (
+            df_toa.columns[3]
+            if len(df_toa.columns) > 3
+            else df_toa.columns[0]
+        )
+        # Coluna ST3 (Baixas / Encerramento): coluna 7
+        col_st3_toa = (
+            df_toa.columns[7]
+            if len(df_toa.columns) > 7
+            else (
+                df_toa.columns[4]
+                if len(df_toa.columns) > 4
+                else df_toa.columns[0]
+            )
+        )
+        # Coluna PME: coluna 6
+        col_pme_toa = (
+            df_toa.columns[6]
+            if len(df_toa.columns) > 6
+            else (
+                df_toa.columns[5]
+                if len(df_toa.columns) > 5
+                else df_toa.columns[0]
+            )
+        )
+
         df_toa_clean = df_toa.copy()
         df_toa_clean["_chave_"] = (
-            df_toa_clean[col_chave_toa]
-            .astype(str)
-            .str.strip()
-            .str.replace(r"\.0$", "", regex=True)
+            df_toa_clean[col_chave_toa].apply(limpar_chave).astype(str)
         )
+        df_toa_clean = df_toa_clean[df_toa_clean["_chave_"] != ""]
         df_toa_clean = df_toa_clean.drop_duplicates(
             subset=["_chave_"], keep="first"
         )
         toa_dict = df_toa_clean.set_index("_chave_").to_dict(orient="index")
 
+        # Localiza coluna de Contrato Cliente no Aniel
+        col_chave_aniel = "Contrato Cliente"
+        if col_chave_aniel not in df_aniel.columns:
+          for c in df_aniel.columns:
+            if "contrato" in c.lower():
+              col_chave_aniel = c
+              break
+
         for idx, row in df_aniel.iterrows():
-          contrato = (
-              str(row.get("Contrato Cliente", "")).strip().replace(".0", "")
-          )
+          contrato = limpar_chave(row.get(col_chave_aniel, ""))
           if contrato in toa_dict:
             match = toa_dict[contrato]
-            df_aniel.at[idx, "ST1"] = str(
-                match.get(df_toa.columns[2], "")
-            ).replace("nan", "")
-            df_aniel.at[idx, "ST2"] = str(
-                match.get(df_toa.columns[3], "")
-            ).replace("nan", "")
-            df_aniel.at[idx, "ST3"] = str(
-                match.get(df_toa.columns[7], "")
-            ).replace("nan", "")
-            df_aniel.at[idx, "PME"] = str(
-                match.get(df_toa.columns[6], "")
-            ).replace("nan", "")
+            df_aniel.at[idx, "ST1"] = str(match.get(col_st1_toa, "")).replace(
+                "nan", ""
+            )
+            df_aniel.at[idx, "ST2"] = str(match.get(col_st2_toa, "")).replace(
+                "nan", ""
+            )
+            df_aniel.at[idx, "ST3"] = str(match.get(col_st3_toa, "")).replace(
+                "nan", ""
+            )
+            df_aniel.at[idx, "PME"] = str(match.get(col_pme_toa, "")).replace(
+                "nan", ""
+            )
           else:
             df_aniel.at[idx, "ST1"] = ""
             df_aniel.at[idx, "ST2"] = ""
             df_aniel.at[idx, "ST3"] = ""
             df_aniel.at[idx, "PME"] = ""
 
-      # 2. Tratamentos de Regras de Negócio
+      # 2. Aplicação das Regras Operacionais
       baixas_upper = {k.upper(): v for k, v in BAIXAS_DICT.items()}
       desc_upper = {k.upper(): v for k, v in DESC_OS_DICT.items()}
       pontos_upper = {k.upper(): v for k, v in PONTOS_DICT.items()}
@@ -473,7 +531,7 @@ if uploaded_aniel is not None:
         st3_raw = str(row.get("ST3", "")).strip()
         st3_val = "" if st3_raw.lower() == "nan" else st3_raw.upper()
 
-        # N/A -> Baixas
+        # N/A ou vazio -> PROCV na tabela Baixas
         if tipo_os in ["N/A", "#N/A", ""]:
           encontrou = False
           if st3_val != "":
@@ -506,7 +564,7 @@ if uploaded_aniel is not None:
 
         df_aniel.at[idx, "Tipo de OS"] = tipo_os
 
-        # Regra CANCELADAS
+        # Regra CANCELADAS (conforme macro: se ST2 contiver cancelado, preenche CANCELADO)
         if "cancelado" in st2_val:
           df_aniel.at[idx, "CANCELADAS"] = "CANCELADO"
         else:
@@ -604,17 +662,15 @@ if uploaded_aniel is not None:
           "ATIVIDADES",
       ]
 
-      # Garante que as colunas existam se faltarem na base original
       for col in colunas_finais:
         if col not in df_aniel.columns:
           df_aniel[col] = ""
 
-      # Filtra estritamente apenas as colunas desejadas, excluindo todo o resto
       df_aniel = df_aniel[colunas_finais]
 
       st.success(
-          "Processamento concluído com sucesso! Apenas as 16 colunas finais"
-          " mantidas:"
+          "Processamento concluído com sucesso! Colunas preenchidas e"
+          " alinhadas:"
       )
       st.dataframe(df_aniel.head(25))
 
