@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- CSS DE ESTILIZAÇÃO PROFISSIONAL EXECUTIVA ---
+# --- CSS DE ESTILIZAÇÃO PROFISSIONAL EXECUTIVA (COM DESTAQUES NAS COLUNAS) ---
 st.markdown("""
 <style>
     .reportview-container .main .block-container {
@@ -46,6 +46,10 @@ st.markdown("""
     .th-mig { background-color: #f5b7b1; color: #78281f; }
     .th-retorno { background-color: #a9dfbf; color: #145a32; }
     .th-pme { background-color: #aed6f1; color: #1b4f72; }
+    
+    /* Classes de destaque solicitadas */
+    .col-destaque-amarelo { background-color: #fcf3cf !important; font-weight: bold; color: #7d6608; }
+    .col-destaque-azul { background-color: #d4efdf !important; font-weight: bold; color: #145a32; }
     
     .tr-base { background-color: #eafaf1; font-weight: bold; color: #145a32; font-size: 13px; }
     .tr-sup { background-color: #ffffff; color: #2c3e50; font-size: 11px; }
@@ -824,7 +828,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             pontos = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"]["Pontos Prev."].sum()
             media_os = (produtivo / montados) if montados > 0 else 0.0
             
-            # O.S. Sem Consultivo subtrai o consultivo de hoje
+            # O.S. Sem Consultivo corrigida (Subtrai o consultivo de hoje)
             os_sem_c = max(0, produtivo - hoje_c)
             
             os_canc = len(df_sub[df_sub["CANCELADAS"] == "CANCELADO"])
@@ -873,7 +877,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                     <tr>
                         <th rowspan="2" class="th-data">{data_formatada}</th>
                         <th rowspan="2" class="th-data">Parados</th>
-                        <th rowspan="2" class="th-data">Montados</th>
+                        <th rowspan="2" class="th-data col-destaque-amarelo">Montados</th>
                         <th colspan="2" class="th-qtd-os">QTDE. DE O.S. OUTUBRO</th>
                         <th colspan="4" class="th-consult">CONSULTIVO OUTUBRO</th>
                         <th colspan="10" class="th-prod">PRODUTIVIDADE (Projeção)</th>
@@ -896,9 +900,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                         <th class="th-prod">O.S. ABERTA</th>
                         <th class="th-prod">Pontos</th>
                         <th class="th-prod">Efic. (%)</th>
-                        <th class="th-prod">Média O.S.</th>
+                        <th class="th-prod col-destaque-azul">Média O.S.</th>
                         <th class="th-prod">O.S. Exec.</th>
-                        <th class="th-prod">O.S Sem Consult</th>
+                        <th class="th-prod col-destaque-amarelo">O.S Sem Consult</th>
                         <th class="th-prod">Quebra INS (%)</th>
                         <th class="th-prod">Quebra SERV (%)</th>
                         <th class="th-prod">Quebra ND (%)</th>
@@ -966,7 +970,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "os_consult": os_consult_b, "ganho": ganho_b
             }
 
-        # --- TABELA PRINCIPAL (APENAS AS BASES COM FONTE MAIOR) ---
+        # --- TABELA PRINCIPAL (COM AS COLUNAS DESTAQUE APLICADAS) ---
         tabela_html = [gerar_cabecalho_html()]
 
         for b in bases_padrao:
@@ -976,7 +980,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 f'<tr class="tr-base">'
                 f'<td style="text-align: left; padding-left: 8px;">{b}</td>'
                 f'<td>{m["p_base"]}</td>'
-                f'<td>{m["m_base"]}</td>'
+                f'<td class="col-destaque-amarelo">{m["m_base"]}</td>'
                 f'<td>{m["meta_os"]:,.0f}</td>'
                 f'<td class="red-text">{m["proj_os"]:,.0f}</td>'
                 f'<td>{m["meta_c"]}</td>'
@@ -987,9 +991,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 f'<td>{res["os_aberta"]}</td>'
                 f'<td>{res["pontos"]}</td>'
                 f'<td>{res["efic"]:.1f}%</td>'
-                f'<td>{res["media_os"]:.1f}</td>'
+                f'<td class="col-destaque-azul">{res["media_os"]:.1f}</td>'
                 f'<td>{res["produtivo"]}</td>'
-                f'<td>{res["os_sem_c"]}</td>'
+                f'<td class="col-destaque-amarelo">{res["os_sem_c"]}</td>'
                 f'<td>{res["q_ins"]:.1f}%</td>'
                 f'<td>{res["q_serv"]:.1f}%</td>'
                 f'<td>{res["q_nd"]:.1f}%</td>'
@@ -1023,7 +1027,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             f'<tr class="tr-total">'
             f'<td style="text-align: left; padding-left: 8px;">TOTAL INSTALAÇÃO</td>'
             f'<td>{g_parados}</td>'
-            f'<td>{g_montados}</td>'
+            f'<td class="col-destaque-amarelo">{g_montados}</td>'
             f'<td>{g_meta_os:,.0f}</td>'
             f'<td class="red-text">{g_proj_os:,.0f}</td>'
             f'<td>{g_meta_cons}</td>'
@@ -1034,9 +1038,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             f'<td>{g_aberta}</td>'
             f'<td>{g_pontos}</td>'
             f'<td>{g_efic:.1f}%</td>'
-            f'<td>{g_media_os:.1f}</td>'
+            f'<td class="col-destaque-azul">{g_media_os:.1f}</td>'
             f'<td>{g_prod}</td>'
-            f'<td>{g_sem_cons}</td>'
+            f'<td class="col-destaque-amarelo">{g_sem_cons}</td>'
             f'<td>{g_q_ins:.1f}%</td>'
             f'<td>{g_q_serv:.1f}%</td>'
             f'<td>{g_q_nd:.1f}%</td>'
@@ -1075,20 +1079,20 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                     m_sup = st.session_state.get(f"m_{b}_{s}", 20)
                     res_s = calcular_metricas(df_s, m_sup, 0)
                     
-                    # Exibe apenas o primeiro nome do supervisor em maiúsculo
+                    # Exibe apenas o primeiro nome em maiúsculo
                     primeiro_nome = s.split()[0]
                     
                     tabela_sup_html.append(
                         f'<tr class="tr-sup">'
                         f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
                         f'<td>{p_sup}</td>'
-                        f'<td>{m_sup}</td>'
+                        f'<td class="col-destaque-amarelo">{m_sup}</td>'
                         f'<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>'
                         f'<td>{res_s["tot_os"]}</td>'
                         f'<td>{res_s["os_aberta"]}</td>'
                         f'<td>{res_s["pontos"]}</td>'
                         f'<td>{res_s["efic"]:.1f}%</td>'
-                        f'<td>{res_s["media_os"]:.1f}</td>'
+                        f'<td class="col-destaque-azul">{res_s["media_os"]:.1f}</td>'
                         f'<td>{res_s["produtivo"]}</td>'
                         f'<td>-</td>'
                         f'<td>{res_s["q_ins"]:.1f}%</td>'
