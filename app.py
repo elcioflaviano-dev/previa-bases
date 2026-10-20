@@ -128,13 +128,6 @@ if "supervisores_por_base" not in st.session_state:
 if "processado_sucesso" not in st.session_state:
     st.session_state.processado_sucesso = False
 
-bases_padrao = ["NET-ABCDM", "NET-Guarulhos", "NET-LESTE"]
-
-# Inicializar estados dos botões de expandir/recolher (+ / -) para cada base
-for b in bases_padrao:
-    if f"exp_{b}" not in st.session_state:
-        st.session_state[f"exp_{b}"] = False
-
 def ir_para_passo_2():
     st.session_state["pagina_atual"] = "2. Dados Operacionais por Base"
 
@@ -473,7 +466,7 @@ DESC_OS_DICT = {
     "TROCA DECODER PARA ATUALIZACAO DIGITAL": "SERVIÇOS",
     "INSTALACAO DE CABO GPON": "INSTALAÇÃO",
     "SUBS DE CONTROLE REMOTO VOZ TV": "SERVIÇOS",
-    "INSTALACAO DE CABO HFC": "INSTALAÇÃO",
+    "INSTALACAO DE CABO HFC": "SERVIÇOS",
     "MUDANCA DE ENDERECO - RETIRAR PONTOS": "SERVIÇOS",
     "CONFIGURACAO STREAMING": "SERVIÇOS",
     "SUBSTITUICAO DE CONTROLE REMOTO DIGITAL": "SERVIÇOS",
@@ -516,6 +509,8 @@ DESC_OS_DICT = {
     "ATENDIMENTO PRIORITARIO MANUTENCAO": "SERVIÇOS",
     "VISITA TECNICA NOW": "SERVIÇOS",
 }
+
+bases_padrao = ["NET-ABCDM", "NET-Guarulhos", "NET-LESTE"]
 
 # ==============================================================================
 # PÁGINA 1: UPLOAD DE ARQUIVOS
@@ -794,7 +789,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         )
 
 # ==============================================================================
-# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (DIRETORIA COM BOTÕES + / - AO LADO DA BASE)
+# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (DIRETORIA LIMPA COM EXPANDERS)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
@@ -972,22 +967,12 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "os_consult": os_consult_b, "ganho": ganho_b
             }
 
-        # --- RENDERIZAÇÃO DA TABELA PRINCIPAL E BOTÕES +/- NAS BASES ---
+        # --- TABELA PRINCIPAL DA DIRETORIA LIMPA ---
         tabela_html = [gerar_cabecalho_html()]
 
         for b in bases_padrao:
             m = metricas_bases[b]
             res = m["res"]
-            
-            # Botão Streamlit para alternar o sinal de + e -
-            col_b1, col_b2 = st.columns([0.15, 0.85])
-            with col_b1:
-                simbolo = "➖" if st.session_state[f"exp_{b}"] else "➕"
-                if st.button(f"{simbolo} {b}", key=f"btn_{b}"):
-                    st.session_state[f"exp_{b}"] = not st.session_state[f"exp_{b}"]
-                    st.rerun()
-
-            # Linha Principal da Base
             tabela_html.append(
                 f'<tr class="tr-base">'
                 f'<td style="text-align: left; padding-left: 8px;">{b}</td>'
@@ -1024,42 +1009,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 f'<td>{res["canc_pme"]}</td>'
                 f'</tr>'
             )
-
-            # Se o botão estiver ativado, insere as linhas dos supervisores logo abaixo da base
-            if st.session_state[f"exp_{b}"]:
-                sups_b = st.session_state.supervisores_por_base.get(b, [])
-                for s in sups_b:
-                    df_s = df_valido[(df_valido["Projeto"].str.upper() == b.upper()) & (df_valido["Supervisor"] == s)]
-                    p_sup = st.session_state.get(f"p_{b}_{s}", 0)
-                    m_sup = st.session_state.get(f"m_{b}_{s}", 20)
-                    res_s = calcular_metricas(df_s, m_sup, 0)
-                    primeiro_nome = s.split()[0]
-                    
-                    tabela_html.append(
-                        f'<tr class="tr-sup">'
-                        f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
-                        f'<td>{p_sup}</td>'
-                        f'<td class="col-destaque-amarelo">{m_sup}</td>'
-                        f'<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>'
-                        f'<td>{res_s["tot_os"]}</td>'
-                        f'<td>{res_s["os_aberta"]}</td>'
-                        f'<td>{res_s["pontos"]}</td>'
-                        f'<td>{res_s["efic"]:.1f}%</td>'
-                        f'<td class="col-destaque-azul">{res_s["media_os"]:.1f}</td>'
-                        f'<td>{res_s["produtivo"]}</td>'
-                        f'<td>-</td>'
-                        f'<td>{res_s["q_ins"]:.1f}%</td>'
-                        f'<td>{res_s["q_serv"]:.1f}%</td>'
-                        f'<td>{res_s["q_nd"]:.1f}%</td>'
-                        f'<td>-</td>'
-                        f'<td>{res_s["os_canc"]}</td>'
-                        f'<td>{res_s["saiu_toa"]}</td>'
-                        f'<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>'
-                        f'<td>{res_s["tot_pme"]}</td>'
-                        f'<td>{res_s["q_pme"]:.1f}%</td>'
-                        f'<td>{res_s["canc_pme"]}</td>'
-                        f'</tr>'
-                    )
 
         g_den_geral = g_quebra + g_prod
         g_efic = (max(0.0, 1.0 - (g_quebra / g_den_geral)) * 100) if g_den_geral > 0 else 0.0
@@ -1112,6 +1061,50 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
         st.markdown("".join(tabela_html), unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
+
+        # --- SEÇÃO EXPANSÍVEL CLEAN PARA OS SUPERVISORES ---
+        with st.expander("🔍 Detalhamento por Supervisores (Expandir / Recolher)"):
+            for b in bases_padrao:
+                df_b = df_valido[df_valido["Projeto"].str.upper() == b.upper()]
+                sups_b = st.session_state.supervisores_por_base.get(b, [])
+                
+                st.markdown(f"**Base: {b}**")
+                tabela_sup_html = [gerar_cabecalho_html()]
+                for s in sups_b:
+                    df_s = df_b[df_b["Supervisor"] == s]
+                    p_sup = st.session_state.get(f"p_{b}_{s}", 0)
+                    m_sup = st.session_state.get(f"m_{b}_{s}", 20)
+                    res_s = calcular_metricas(df_s, m_sup, 0)
+                    primeiro_nome = s.split()[0]
+                    
+                    tabela_sup_html.append(
+                        f'<tr class="tr-sup">'
+                        f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
+                        f'<td>{p_sup}</td>'
+                        f'<td class="col-destaque-amarelo">{m_sup}</td>'
+                        f'<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>'
+                        f'<td>{res_s["tot_os"]}</td>'
+                        f'<td>{res_s["os_aberta"]}</td>'
+                        f'<td>{res_s["pontos"]}</td>'
+                        f'<td>{res_s["efic"]:.1f}%</td>'
+                        f'<td class="col-destaque-azul">{res_s["media_os"]:.1f}</td>'
+                        f'<td>{res_s["produtivo"]}</td>'
+                        f'<td>-</td>'
+                        f'<td>{res_s["q_ins"]:.1f}%</td>'
+                        f'<td>{res_s["q_serv"]:.1f}%</td>'
+                        f'<td>{res_s["q_nd"]:.1f}%</td>'
+                        f'<td>-</td>'
+                        f'<td>{res_s["os_canc"]}</td>'
+                        f'<td>{res_s["saiu_toa"]}</td>'
+                        f'<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>'
+                        f'<td>{res_s["tot_pme"]}</td>'
+                        f'<td>{res_s["q_pme"]:.1f}%</td>'
+                        f'<td>{res_s["canc_pme"]}</td>'
+                        f'</tr>'
+                    )
+                tabela_sup_html.append('</tbody></table>')
+                st.markdown("".join(tabela_sup_html), unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
 
         if st.session_state.df_aniel_full is not None:
             output = io.BytesIO()
