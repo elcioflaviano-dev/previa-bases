@@ -861,7 +861,15 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "tot_gpon": len(df_gpon), "q_gpon": calc_q(df_gpon), "tot_mig": len(df_mig),
                 "q_mig": calc_q(df_mig), "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]),
                 "retorno_wo": len(df_ret), "tot_pme": len(df_pme), "q_pme": calc_q(df_pme),
-                "canc_pme": len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"])
+                "canc_pme": len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"]),
+                "_raw_q_ins": len(df_ins[df_ins["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
+                "_raw_tot_ins": len(df_ins),
+                "_raw_q_serv": len(df_serv[df_serv["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
+                "_raw_tot_serv": len(df_serv),
+                "_raw_q_nd": len(df_nd[df_nd["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
+                "_raw_q_gpon": len(df_gpon[df_gpon["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
+                "_raw_q_mig": len(df_mig[df_mig["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
+                "_raw_q_pme": len(df_pme[df_pme["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])])
             }
 
         def gerar_cabecalho_html():
