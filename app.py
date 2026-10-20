@@ -1030,7 +1030,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         g_q_ins = (g_raw_ins_q / g_raw_ins_tot * 100) if g_raw_ins_tot > 0 else 0.0
         g_q_serv = (g_raw_serv_q / g_raw_serv_tot * 100) if g_raw_serv_tot > 0 else 0.0
         g_q_nd = (g_raw_nd_q / g_nd * 100) if g_nd > 0 else 0.0
-        g_q_gpon = (g_raw_gpon_q / g_gpon * 100) if g_q_gpon > 0 else 0.0
+        g_q_gpon = (g_raw_gpon_q / g_gpon * 100) if g_gpon > 0 else 0.0
         g_q_mig = (g_raw_mig_q / g_mig * 100) if g_mig > 0 else 0.0
         g_q_pme = (g_raw_pme_q / g_pme * 100) if g_raw_pme_q > 0 else 0.0
 
