@@ -1,8 +1,11 @@
 import io
 import re
+import calendar
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(
     page_title="Painel Executivo - Prévia Diária",
@@ -33,7 +36,6 @@ st.markdown("""
         border: 1px solid #bdc3c7;
         padding: 4px 3px;
     }
-    /* Cores dos cabeçalhos idênticas à imagem */
     .th-data { background-color: #f2f4f4; color: #2c3e50; }
     .th-qtd-os { background-color: #a9dfbf; color: #145a32; }
     .th-consult { background-color: #d5dbdb; color: #212f3d; }
@@ -45,7 +47,6 @@ st.markdown("""
     .th-retorno { background-color: #a9dfbf; color: #145a32; }
     .th-pme { background-color: #aed6f1; color: #1b4f72; }
     
-    /* Linhas de Base e Total */
     .tr-base { background-color: #eafaf1; font-weight: bold; color: #145a32; }
     .tr-sup { background-color: #ffffff; color: #2c3e50; }
     .tr-total { background-color: #d4efdf; font-weight: 900; color: #145a32; border-top: 2px solid #27ae60; }
@@ -53,7 +54,63 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Inicialização de variáveis globais de estado
+# --- CÁLCULO AUTOMÁTICO DE DIAS ÚTEIS (SEG A SÁB - EXCLUI DOMINGOS) ---
+def calcular_calendario_automatico(ref_date=None):
+    if ref_date is None:
+        ref_date = datetime.now()
+    ano = ref_date.year
+    mes = ref_date.month
+    dia_atual = ref_date.day
+    
+    total_dias_mes = calendar.monthrange(ano, mes)[1]
+    dias_uteis_mes = sum(1 for d in range(1, total_dias_mes + 1) if datetime(ano, mes, d).weekday() != 6)
+    dias_trab_ate_hoje = sum(1 for d in range(1, dia_atual + 1) if datetime(ano, mes, d).weekday() != 6)
+    
+    return dias_uteis_mes, max(1, dias_trab_ate_hoje), ref_date.strftime("%d/%m/%Y")
+
+# --- CONEXÃO E GERENCIAMENTO COM O GOOGLE SHEETS ---
+@st.cache_resource
+def get_connection():
+    try:
+        return st.connection("gsheets", type=GSheetsConnection)
+    except Exception:
+        return None
+
+def carregar_historico_sheets():
+    conn = get_connection()
+    if conn:
+        try:
+            df = conn.read(worksheet="Historico_OS", ttl=0)
+            if not df.empty and "Base" in df.columns and "OS_Executadas" in df.columns:
+                return df
+        except Exception:
+            pass
+    return pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
+
+def salvar_historico_sheets(data_str, base, os_exec):
+    conn = get_connection()
+    if conn:
+        try:
+            df_hist = carregar_historico_sheets()
+            # Remove entrada duplicada para o mesmo dia e base
+            df_hist = df_hist[~((df_hist["Data"] == data_str) & (df_hist["Base"] == base))]
+            nova_linha = pd.DataFrame([{"Data": data_str, "Base": base, "OS_Executadas": int(os_exec)}])
+            df_atualizado = pd.concat([df_hist, nova_linha], ignore_index=True)
+            conn.update(worksheet="Historico_OS", data=df_atualizado)
+        except Exception as e:
+            st.warning(f"Aviso de sincronização com Google Sheets: {e}")
+
+def obter_media_acumulada_sheets(base, os_exec_hoje, dias_trabalhados):
+    df_hist = carregar_historico_sheets()
+    if not df_hist.empty:
+        df_base = df_hist[df_hist["Base"] == base]
+        if not df_base.empty:
+            # Soma todas as OS dos dias anteriores mais a execução de hoje
+            tot_exec = pd.to_numeric(df_base["OS_Executadas"], errors="coerce").fillna(0).sum()
+            return tot_exec / dias_trabalhados
+    return float(os_exec_hoje)
+
+# Inicialização de variáveis de sessão
 if "pagina" not in st.session_state:
     st.session_state.pagina = "1. Upload de Arquivos"
 if "df_valido" not in st.session_state:
@@ -63,9 +120,8 @@ if "df_aniel_full" not in st.session_state:
 if "supervisores_por_base" not in st.session_state:
     st.session_state.supervisores_por_base = {}
 
-# Menu lateral de navegação
 st.sidebar.title("Navegação")
-etapas = ["1. Upload de Arquivos", "2. Dados Manuais por Base", "3. Visualização da Prévia"]
+etapas = ["1. Upload de Arquivos", "2. Dados Operacionais por Base", "3. Visualização da Prévia"]
 st.session_state.pagina = st.sidebar.radio("Ir para:", etapas, index=etapas.index(st.session_state.pagina))
 
 def ler_arquivo_seguro(uploaded_file):
@@ -444,7 +500,7 @@ bases_padrao = ["NET-ABCDM", "NET-Guarulhos", "NET-LESTE"]
 # ==============================================================================
 if st.session_state.pagina == "1. Upload de Arquivos":
     st.subheader("📁 Passo 1: Upload e Cruzamento das Bases")
-    st.write("Faça o upload do arquivo do ANIEL e dos arquivos do TOA para iniciar o processamento.")
+    st.write("Carregue o arquivo do ANIEL e os arquivos do TOA para processar o dia.")
     
     col_u1, col_u2 = st.columns(2)
     with col_u1:
@@ -454,7 +510,7 @@ if st.session_state.pagina == "1. Upload de Arquivos":
         
     if up_aniel is not None:
         if st.button("🚀 Processar Arquivos e Cruzar Bases", type="primary"):
-            with st.spinner("Lendo arquivos, cruzando bases e tratando regras operacionais..."):
+            with st.spinner("Processando cruzamento e tratando dados..."):
                 try:
                     df_aniel = ler_arquivo_seguro(up_aniel)
                     df_aniel.columns = [str(c).strip() for c in df_aniel.columns]
@@ -466,7 +522,6 @@ if st.session_state.pagina == "1. Upload de Arquivos":
                             ~df_aniel[col_proj].astype(str).str.upper().str.contains(r"\bVT\b|VT", regex=True, na=False)
                         ].reset_index(drop=True)
 
-                    # Leitura TOA
                     df_toa = None
                     if up_toa:
                         colunas_uteis_toa = [
@@ -507,7 +562,6 @@ if st.session_state.pagina == "1. Upload de Arquivos":
                                 df_aniel.at[idx, "ST3"] = str(match.get("Cód de Baixa 1", "")).replace("nan", "").strip()
                                 df_aniel.at[idx, "PME"] = str(match.get("Categorias da Capacidade", "")).replace("nan", "").strip()
 
-                    # Conversão Pontos Prev.
                     if "Pontos Prev." not in df_aniel.columns:
                         df_aniel["Pontos Prev."] = 0.0
                     else:
@@ -617,90 +671,84 @@ if st.session_state.pagina == "1. Upload de Arquivos":
                     df_aniel["Supervisor"] = df_aniel["Supervisor"].fillna("").astype(str).str.strip().str.upper()
                     df_aniel["Tipo de Serviço"] = df_aniel["Tipo de Serviço"].fillna("").astype(str).str.strip().str.upper()
 
-                    # Exclui vazios e IVAN
                     df_valido = df_aniel[
                         (df_aniel["Supervisor"] != "") &
                         (df_aniel["Tipo de Serviço"] != "") &
                         (~df_aniel["Supervisor"].str.contains("IVAN", na=False))
                     ].copy()
 
-                    # Guarda em sessão
                     st.session_state.df_valido = df_valido
                     st.session_state.df_aniel_full = df_aniel
 
-                    # Mapeia supervisores reais de cada base
                     sup_map = {}
                     for b in bases_padrao:
                         sups = sorted(df_valido[df_valido["Projeto"].str.upper() == b.upper()]["Supervisor"].unique().tolist())
                         sup_map[b] = sups
                     st.session_state.supervisores_por_base = sup_map
 
-                    st.success("✅ Arquivos processados com sucesso! Os dados foram tratados e cruzados.")
-                    st.info("👉 Por favor, avance para a aba '2. Dados Manuais por Base' no menu à esquerda ou clique no botão abaixo:")
-                    if st.button("Ir para Dados Manuais ➡️"):
-                        st.session_state.pagina = "2. Dados Manuais por Base"
+                    st.success("✅ Arquivos carregados e tratados com sucesso!")
+                    if st.button("Ir para Dados Operacionais ➡️"):
+                        st.session_state.pagina = "2. Dados Operacionais por Base"
                         st.rerun()
 
                 except Exception as e:
-                    st.error(f"Erro ao processar arquivos: {e}")
+                    st.error(f"Erro ao processar: {e}")
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS MANUAIS
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (CALENDÁRIO 100% AUTOMÁTICO)
 # ==============================================================================
-elif st.session_state.pagina == "2. Dados Manuais por Base":
-    st.subheader("⚙️ Passo 2: Preenchimento de Dados Manuais por Base")
-    st.write("Insira os dados de Parados, Montados, Metas e Consultivo para cada regional.")
-
+elif st.session_state.pagina == "2. Dados Operacionais por Base":
+    st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
+    
     if st.session_state.df_valido is None:
-        st.warning("⚠️ Nenhum arquivo foi processado ainda. Volte para a página '1. Upload de Arquivos' e carregue as bases primeiro.")
+        st.warning("⚠️ Carregue os arquivos primeiro no Passo 1.")
     else:
-        # Configuração de calendário
-        c_cal1, c_cal2 = st.columns(2)
-        with c_cal1:
-            dias_uteis = st.number_input("Dias Úteis do Mês (Seg a Sáb)", value=27, min_value=20, max_value=31, key="cfg_dias_uteis")
-        with c_cal2:
-            dias_trab = st.number_input("Dias Úteis Trabalhados até Hoje", value=16, min_value=1, max_value=dias_uteis, key="cfg_dias_trab")
+        data_base_ref = datetime.now()
+        if "Data Agendamento" in st.session_state.df_valido.columns:
+            try:
+                datas_unicas = pd.to_datetime(st.session_state.df_valido["Data Agendamento"], dayfirst=True, errors='coerce').dropna()
+                if not datas_unicas.empty:
+                    data_base_ref = datas_unicas.iloc[0]
+            except Exception:
+                pass
 
-        st.markdown("---")
+        dias_uteis_auto, dias_trab_auto, data_formatada = calcular_calendario_automatico(data_base_ref)
+        st.info(f"📅 **Data de Referência:** {data_formatada} | **Dias Úteis do Mês (Seg a Sáb):** {dias_uteis_auto} dias | **Dias Úteis Trabalhados até Hoje:** {dias_trab_auto} dias (Calculado automaticamente)")
         
-        # Valores iniciais padrão
+        st.session_state["dias_uteis_auto"] = dias_uteis_auto
+        st.session_state["dias_trab_auto"] = dias_trab_auto
+        st.session_state["data_formatada"] = data_formatada
+
         defaults = {
-            "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "meta_cons": 552, "hoje_cons": 12, "ganho_os": 27, "media_g3": 366.5,
+            "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "meta_cons": 552, "hoje_cons": 12, "ganho_os": 27,
                           "sup_parados": {"EDSON MARCO PINHEIRO": 3, "MAICON APARECIDO FARIA": 1, "NELSON ALVES OLIVEIRA JUNIOR": 0},
                           "sup_montados": {"EDSON MARCO PINHEIRO": 23, "MAICON APARECIDO FARIA": 22, "NELSON ALVES OLIVEIRA JUNIOR": 23}},
-            "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "meta_cons": 608, "hoje_cons": 19, "ganho_os": 40, "media_g3": 397.2,
+            "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "meta_cons": 608, "hoje_cons": 19, "ganho_os": 40,
                               "sup_parados": {"ADRIANO NASCIMENTO DA SILVA": 0, "DANIELE BARBOSA DE OLIVEIRA": 3, "FERNANDO CESAR COELHO RAMOS": 2, "PALOMA REGINA SILVA BATISTA": 1},
                               "sup_montados": {"ADRIANO NASCIMENTO DA SILVA": 20, "DANIELE BARBOSA DE OLIVEIRA": 20, "FERNANDO CESAR COELHO RAMOS": 19, "PALOMA REGINA SILVA BATISTA": 19}},
-            "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "meta_cons": 656, "hoje_cons": 39, "ganho_os": 42, "media_g3": 379.5,
+            "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "meta_cons": 656, "hoje_cons": 39, "ganho_os": 42,
                           "sup_parados": {"ALAN DE ANDRADE DIAS": 2, "ELISANGELA CASSIMIRO GONCALVES": 0, "FRANCISCO GERALDO CARVALHO JUNIOR": 0, "JOAO CARLOS FERREIRA MIRON": 3},
                           "sup_montados": {"ALAN DE ANDRADE DIAS": 26, "ELISANGELA CASSIMIRO GONCALVES": 11, "FRANCISCO GERALDO CARVALHO JUNIOR": 26, "JOAO CARLOS FERREIRA MIRON": 17}}
         }
 
-        # Cria abas para cada base
         tabs = st.tabs(["NET-ABCDM", "NET-Guarulhos", "NET-LESTE"])
-        
         for i, b in enumerate(bases_padrao):
             with tabs[i]:
                 d = defaults.get(b, {})
-                st.markdown(f"#### 🏢 Indicadores da Base: {b}")
-                
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
-                    p_val = st.number_input(f"Total Parados ({b})", value=d.get("parados", 0), key=f"inp_par_{b}")
-                    m_val = st.number_input(f"Total Montados ({b})", value=d.get("montados", 0), key=f"inp_mon_{b}")
+                    st.number_input(f"Total Parados ({b})", value=d.get("parados", 0), key=f"inp_par_{b}")
+                    st.number_input(f"Total Montados ({b})", value=d.get("montados", 0), key=f"inp_mon_{b}")
                 with c2:
-                    meta_os = st.number_input(f"Meta O.S. Mês ({b})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b}")
-                    med_g3 = st.number_input(f"Média O.S. (G3) ({b})", value=float(d.get("media_g3", 0.0)), step=0.1, key=f"inp_g3_{b}")
+                    st.number_input(f"Meta O.S. Mês ({b})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b}")
+                    st.number_input(f"Ganho O.S. ({b})", value=d.get("ganho_os", 0), key=f"inp_ganho_{b}")
                 with c3:
-                    meta_c = st.number_input(f"Meta Consultivo ({b})", value=d.get("meta_cons", 0), key=f"inp_meta_c_{b}")
-                    hoje_c = st.number_input(f"Hoje Consultivo ({b})", value=d.get("hoje_cons", 0), key=f"inp_hoje_c_{b}")
+                    st.number_input(f"Meta Consultivo ({b})", value=d.get("meta_cons", 0), key=f"inp_meta_c_{b}")
                 with c4:
-                    ganho = st.number_input(f"Ganho O.S. ({b})", value=d.get("ganho_os", 0), key=f"inp_ganho_{b}")
+                    st.number_input(f"Hoje Consultivo ({b})", value=d.get("hoje_cons", 0), key=f"inp_hoje_c_{b}")
                 
-                # Detalhamento por Supervisor (Parados e Montados)
-                st.markdown("##### 👥 Equipe de Supervisores da Base:")
+                st.markdown("##### 👥 Equipe de Supervisores:")
                 sups_base = st.session_state.supervisores_por_base.get(b, [])
-                
                 col_s1, col_s2 = st.columns(2)
                 for sup in sups_base:
                     def_p = d.get("sup_parados", {}).get(sup, 0)
@@ -711,7 +759,7 @@ elif st.session_state.pagina == "2. Dados Manuais por Base":
                         st.number_input(f"Montados: {sup}", value=def_m, key=f"m_{b}_{sup}")
 
         st.markdown("---")
-        if st.button("💾 Gravar Dados e Ver Prévia da Diretoria", type="primary"):
+        if st.button("📊 Sincronizar Google Sheets e Gerar Prévia Executiva", type="primary"):
             st.session_state.pagina = "3. Visualização da Prévia"
             st.rerun()
 
@@ -722,11 +770,12 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
 
     if st.session_state.df_valido is None:
-        st.warning("⚠️ Nenhum dado disponível. Complete o Passo 1 (Upload) e o Passo 2 (Dados Manuais).")
+        st.warning("⚠️ Dados não encontrados. Complete os passos anteriores.")
     else:
         df_valido = st.session_state.df_valido
-        dias_uteis = st.session_state.get("cfg_dias_uteis", 27)
-        dias_trab = st.session_state.get("cfg_dias_trab", 16)
+        dias_uteis = st.session_state.get("dias_uteis_auto", 27)
+        dias_trab = st.session_state.get("dias_trab_auto", 16)
+        data_formatada = st.session_state.get("data_formatada", "19/10/2026")
 
         servicos_nd = [
             "ADESAO ENTREGA STREAMING",
@@ -740,7 +789,6 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
             produtivo = len(df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"])
             quebra_geral = len(df_sub[df_sub["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])])
             
-            # Fórmulas
             den_geral = quebra_geral + produtivo
             pct_quebra_geral = (quebra_geral / den_geral) if den_geral > 0 else 0.0
             efic = max(0.0, 1.0 - pct_quebra_geral)
@@ -757,43 +805,24 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
                 d = q + p
                 return (q / d * 100) if d > 0 else 0.0
 
-            # Quebras específicas
             df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"]
-            q_ins = calc_q(df_ins)
-
             df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"]
-            q_serv = calc_q(df_serv)
-
             df_nd = df_sub[df_sub["Tipo de Serviço"].isin(servicos_nd)]
-            tot_nd = len(df_nd)
-            q_nd = calc_q(df_nd)
-
             df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"]
-            tot_gpon = len(df_gpon)
-            q_gpon = calc_q(df_gpon)
-
             df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"]
-            tot_mig = len(df_mig)
-            q_mig = calc_q(df_mig)
-            canc_mig = len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"])
-
             df_ret = df_sub[df_sub["QUEBRAS"] == "RETORNO"]
-            retorno_wo = len(df_ret)
-
             df_pme = df_sub[df_sub["PME"].astype(str).str.strip() != ""]
-            tot_pme = len(df_pme)
-            q_pme = calc_q(df_pme)
-            canc_pme = len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"])
 
             return {
                 "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": produtivo,
                 "quebra_geral": quebra_geral, "pontos": int(round(pontos, 0)),
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
-                "os_sem_c": os_sem_c, "q_ins": q_ins, "q_serv": q_serv,
-                "tot_nd": tot_nd, "q_nd": q_nd, "os_canc": os_canc, "saiu_toa": saiu_toa,
-                "tot_gpon": tot_gpon, "q_gpon": q_gpon, "tot_mig": tot_mig,
-                "q_mig": q_mig, "canc_mig": canc_mig, "retorno_wo": retorno_wo,
-                "tot_pme": tot_pme, "q_pme": q_pme, "canc_pme": canc_pme,
+                "os_sem_c": os_sem_c, "q_ins": calc_q(df_ins), "q_serv": calc_q(df_serv),
+                "tot_nd": len(df_nd), "q_nd": calc_q(df_nd), "os_canc": os_canc, "saiu_toa": saiu_toa,
+                "tot_gpon": len(df_gpon), "q_gpon": calc_q(df_gpon), "tot_mig": len(df_mig),
+                "q_mig": calc_q(df_mig), "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]),
+                "retorno_wo": len(df_ret), "tot_pme": len(df_pme), "q_pme": calc_q(df_pme),
+                "canc_pme": len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"]),
                 "_raw_q_ins": len(df_ins[df_ins["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
                 "_raw_tot_ins": len(df_ins),
                 "_raw_q_serv": len(df_serv[df_serv["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
@@ -804,15 +833,11 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
                 "_raw_q_pme": len(df_pme[df_pme["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])])
             }
 
-            # Montagem estruturada das linhas para apresentação
-        tabela_html = []
-        
-        # Cabeçalho idêntico à planilha
-        tabela_html.append(f"""
+        tabela_html = [f"""
         <table class="custom-table">
             <thead>
                 <tr>
-                    <th rowspan="2" class="th-data">19/10/2026</th>
+                    <th rowspan="2" class="th-data">{data_formatada}</th>
                     <th rowspan="2" class="th-data">Parados</th>
                     <th rowspan="2" class="th-data">Montados</th>
                     <th colspan="2" class="th-qtd-os">QTDE. DE O.S. OUTUBRO</th>
@@ -856,9 +881,8 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
                 </tr>
             </thead>
             <tbody>
-        """)
+        """]
 
-        # Totais globais para linha TOTAL INSTALAÇÃO
         g_parados = 0; g_montados = 0; g_meta_os = 0; g_proj_os = 0
         g_meta_cons = 0; g_proj_cons = 0; g_hoje_cons = 0; g_os_cons = 0
         g_tot_os = 0; g_aberta = 0; g_pontos = 0; g_prod = 0; g_quebra = 0
@@ -874,19 +898,22 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
             p_base = st.session_state.get(f"inp_par_{b}", 0)
             m_base = st.session_state.get(f"inp_mon_{b}", 0)
             meta_os_b = st.session_state.get(f"inp_meta_os_{b}", 0)
-            g3_b = st.session_state.get(f"inp_g3_{b}", 0.0)
             meta_c_b = st.session_state.get(f"inp_meta_c_{b}", 0)
             hoje_c_b = st.session_state.get(f"inp_hoje_c_{b}", 0)
             ganho_b = st.session_state.get(f"inp_ganho_{b}", 0)
 
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
-            # Projeção O.S. = G3 * 27
-            proj_os_b = int(round(g3_b * dias_uteis)) if g3_b > 0 else int(round(res_b["proj_dia"] * dias_uteis))
+            # Sincroniza e salva o executado de hoje no Google Sheets central
+            salvar_historico_sheets(data_formatada, b, res_b["produtivo"])
+            
+            # Obtém a média acumulada real registrada no Google Sheets
+            media_acum_b = obter_media_acumulada_sheets(b, res_b["produtivo"], dias_trab)
+            proj_os_b = int(round(media_acum_b * dias_uteis))
+            
             proj_c_b = int(round((hoje_c_b / dias_trab) * dias_uteis)) if dias_trab > 0 else 0
-            os_consult_b = hoje_c_b * 2  # valor de OS consultivo
+            os_consult_b = hoje_c_b * 2
 
-            # Acumula totais
             g_parados += p_base; g_montados += m_base; g_meta_os += meta_os_b; g_proj_os += proj_os_b
             g_meta_cons += meta_c_b; g_proj_cons += proj_c_b; g_hoje_cons += hoje_c_b; g_os_cons += os_consult_b
             g_tot_os += res_b["tot_os"]; g_aberta += res_b["os_aberta"]; g_pontos += res_b["pontos"]; g_prod += res_b["produtivo"]
@@ -899,7 +926,6 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
             g_raw_nd_q += res_b["_raw_q_nd"]; g_raw_gpon_q += res_b["_raw_q_gpon"]
             g_raw_mig_q += res_b["_raw_q_mig"]; g_raw_pme_q += res_b["_raw_q_pme"]
 
-            # Linha consolidada da Base
             num_linhas_span = len(sups_b) + 1
             tabela_html.append(f"""
             <tr class="tr-base">
@@ -938,7 +964,6 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
             </tr>
             """)
 
-            # Linhas dos Supervisores
             for s in sups_b:
                 df_s = df_b[df_b["Supervisor"] == s]
                 p_sup = st.session_state.get(f"p_{b}_{s}", 0)
@@ -967,7 +992,7 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
                 </tr>
                 """)
 
-        # Linha Final: TOTAL INSTALAÇÃO
+        # Total Geral
         g_den_geral = g_quebra + g_prod
         g_efic = (max(0.0, 1.0 - (g_quebra / g_den_geral)) * 100) if g_den_geral > 0 else 0.0
         g_media_os = (g_prod / g_montados) if g_montados > 0 else 0.0
@@ -1017,18 +1042,16 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
         </table>
         """)
 
-        # Renderização da Tabela Executiva
         st.markdown("".join(tabela_html), unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Botão para Baixar a Planilha Excel
         if st.session_state.df_aniel_full is not None:
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
                 st.session_state.df_aniel_full.to_excel(writer, sheet_name="BASE_TRATADA", index=False)
             
             st.download_button(
-                label="📥 Baixar Base ANIEL Tratada (.xlsx)",
+                label="📥 Baixar Planilha ANIEL Tratada (.xlsx)",
                 data=output.getvalue(),
                 file_name="Planilha_Tratada_Aniel.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
