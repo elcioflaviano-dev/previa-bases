@@ -4,3 +4,4 @@ openpyxl
 numpy
 xlrd
 lxml
+st-gsheets-connection
