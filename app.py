@@ -26,6 +26,7 @@ st.markdown("""
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         font-size: 11px;
         text-align: center;
+        margin-bottom: 1rem;
     }
     .custom-table th {
         border: 1px solid #7f8c8d;
@@ -1029,9 +1030,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         g_q_ins = (g_raw_ins_q / g_raw_ins_tot * 100) if g_raw_ins_tot > 0 else 0.0
         g_q_serv = (g_raw_serv_q / g_raw_serv_tot * 100) if g_raw_serv_tot > 0 else 0.0
         g_q_nd = (g_raw_nd_q / g_nd * 100) if g_nd > 0 else 0.0
-        g_q_gpon = (g_raw_gpon_q / g_gpon * 100) if g_gpon > 0 else 0.0
+        g_q_gpon = (g_raw_gpon_q / g_gpon * 100) if g_q_gpon > 0 else 0.0
         g_q_mig = (g_raw_mig_q / g_mig * 100) if g_mig > 0 else 0.0
-        g_q_pme = (g_raw_pme_q / g_pme * 100) if g_pme > 0 else 0.0
+        g_q_pme = (g_raw_pme_q / g_pme * 100) if g_raw_pme_q > 0 else 0.0
 
         tabela_html.append(
             f'<tr class="tr-total">'
@@ -1062,7 +1063,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             f'<td>{g_q_gpon:.1f}%</td>'
             f'<td>{g_mig}</td>'
             f'<td>{g_q_mig:.1f}%</td>'
-            f'<td>{g_mig_canc}</td>'
+            f'<td>{g_pme_canc}</td>'
             f'<td>{g_retorno}</td>'
             f'<td>{g_pme}</td>'
             f'<td>{g_q_pme:.1f}%</td>'
@@ -1075,18 +1076,57 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         st.markdown("".join(tabela_html), unsafe_allow_html=True)
         st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
-        # --- BLOCOS SEPARADOS POR BASE PARA OS SUPERVISORES (SEM TRAÇOS, CÉLULAS VAZIAS LIMPAS) ---
-        st.markdown("### 🏢 Detalhamento por Supervisores (Separado por Blocos de Base)")
+        # --- BLOCOS INDIVIDUAIS POR BASE (ABC EM UM BLOCO, GUARULHOS EM OUTRO, ETC.) ---
+        st.markdown("### 🏢 Detalhamento Operacional por Base e Supervisores")
 
         for item in bases_config:
             b_label = item["label"]
             b_proj = item["projeto"]
+            m = metricas_bases[b_proj]
+            res_b = m["res"]
             
-            with st.expander(f"📂 Expandir Detalhamento da Base: {b_label}"):
+            with st.expander(f"📂 Base: {b_label} (Clique para Expandir/Recolher Supervisores)"):
                 df_b = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()]
                 sups_b = st.session_state.supervisores_por_base.get(b_proj, [])
                 
-                tabela_sup_html = [gerar_cabecalho_html()]
+                tabela_bloco_html = [
+                    gerar_cabecalho_html(),
+                    f'<tr class="tr-base">'
+                    f'<td style="text-align: left; padding-left: 8px;">{b_label}</td>'
+                    f'<td>{m["p_base"]}</td>'
+                    f'<td class="col-destaque-amarelo">{m["m_base"]}</td>'
+                    f'<td>{m["meta_os"]:,.0f}</td>'
+                    f'<td class="red-text">{m["proj_os"]:,.0f}</td>'
+                    f'<td>{m["meta_c"]}</td>'
+                    f'<td class="red-text">{m["proj_c"]}</td>'
+                    f'<td>{m["hoje_c"]}</td>'
+                    f'<td>{m["os_consult"]}</td>'
+                    f'<td>{res_b["tot_os"]}</td>'
+                    f'<td>{res_b["os_aberta"]}</td>'
+                    f'<td>{res_b["pontos"]}</td>'
+                    f'<td>{res_b["efic"]:.1f}%</td>'
+                    f'<td class="col-destaque-azul">{res_b["media_os"]:.1f}</td>'
+                    f'<td>{res_b["produtivo"]}</td>'
+                    f'<td class="col-destaque-amarelo">{res_b["os_sem_c"]}</td>'
+                    f'<td>{res_b["q_ins"]:.1f}%</td>'
+                    f'<td>{res_b["q_serv"]:.1f}%</td>'
+                    f'<td>{res_b["q_nd"]:.1f}%</td>'
+                    f'<td>{res_b["tot_nd"]}</td>'
+                    f'<td>{res_b["os_canc"]}</td>'
+                    f'<td>{res_b["saiu_toa"]}</td>'
+                    f'<td>{m["ganho"]}</td>'
+                    f'<td>{res_b["tot_gpon"]}</td>'
+                    f'<td>{res_b["q_gpon"]:.1f}%</td>'
+                    f'<td>{res_b["tot_mig"]}</td>'
+                    f'<td>{res_b["q_mig"]:.1f}%</td>'
+                    f'<td>{res_b["canc_mig"]}</td>'
+                    f'<td>{res_b["retorno_wo"]}</td>'
+                    f'<td>{res_b["tot_pme"]}</td>'
+                    f'<td>{res_b["q_pme"]:.1f}%</td>'
+                    f'<td>{res_b["canc_pme"]}</td>'
+                    f'</tr>'
+                ]
+
                 for s in sups_b:
                     df_s = df_b[df_b["Supervisor"] == s]
                     p_sup = st.session_state.get(f"p_{b_proj}_{s}", 0)
@@ -1094,7 +1134,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                     res_s = calcular_metricas(df_s, m_sup, 0)
                     primeiro_nome = s.split()[0]
                     
-                    tabela_sup_html.append(
+                    tabela_bloco_html.append(
                         f'<tr class="tr-sup">'
                         f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
                         f'<td>{p_sup}</td>'
@@ -1119,8 +1159,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                         f'<td>{res_s["canc_pme"]}</td>'
                         f'</tr>'
                     )
-                tabela_sup_html.append('</tbody></table>')
-                st.markdown("".join(tabela_sup_html), unsafe_allow_html=True)
+
+                tabela_bloco_html.append('</tbody></table>')
+                st.markdown("".join(tabela_bloco_html), unsafe_allow_html=True)
                 st.markdown("<br>", unsafe_allow_html=True)
 
         if st.session_state.df_aniel_full is not None:
