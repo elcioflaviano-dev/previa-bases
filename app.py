@@ -1,4 +1,5 @@
 import io
+import re
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -62,6 +63,29 @@ def limpar_chave(val):
     if s.endswith(".0"):
         s = s[:-2]
     return s
+
+def limpar_texto(val):
+    if pd.isna(val):
+        return ""
+    s = str(val).strip().upper()
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+def converter_para_float(val):
+    if pd.isna(val):
+        return None
+    s = str(val).strip()
+    if s == "" or s.lower() == "nan":
+        return None
+    s = s.replace(" ", "")
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
 
 # Dicionários de referência integrados
 BAIXAS_DICT = {
@@ -391,7 +415,6 @@ if uploaded_aniel is not None:
             df_aniel = ler_arquivo_seguro(uploaded_aniel)
             df_aniel.columns = [str(c).strip() for c in df_aniel.columns]
 
-            # Inclusão das colunas obrigatórias
             colunas_obrigatorias = ["ST1", "ST2", "ST3", "CANCELADAS", "PME"]
             for col in colunas_obrigatorias:
                 if col not in df_aniel.columns:
@@ -410,8 +433,6 @@ if uploaded_aniel is not None:
                 for file in uploaded_toa:
                     tdf = ler_arquivo_seguro(file)
                     tdf.columns = [str(c).strip() for c in tdf.columns]
-                    
-                    # Mantém apenas as colunas do cabeçalho do TOA existentes no arquivo
                     cols_presentes = [c for c in colunas_uteis_toa if c in tdf.columns]
                     if cols_presentes:
                         tdf = tdf[cols_presentes]
@@ -450,10 +471,10 @@ if uploaded_aniel is not None:
                         df_aniel.at[idx, "ST3"] = ""
                         df_aniel.at[idx, "PME"] = ""
 
-            # Regras de Negócio
-            baixas_upper = {k.upper(): v for k, v in BAIXAS_DICT.items()}
-            desc_upper = {k.upper(): v for k, v in DESC_OS_DICT.items()}
-            pontos_upper = {k.upper(): v for k, v in PONTOS_DICT.items()}
+            # Dicionários normalizados em maiúsculas e sem espaços extras
+            baixas_norm = {limpar_texto(k): v for k, v in BAIXAS_DICT.items()}
+            desc_norm = {limpar_texto(k): v for k, v in DESC_OS_DICT.items()}
+            pontos_norm = {limpar_texto(k): float(v) for k, v in PONTOS_DICT.items()}
 
             for idx, row in df_aniel.iterrows():
                 tipo_os_raw = str(row.get("Tipo de OS", "")).strip()
@@ -467,17 +488,18 @@ if uploaded_aniel is not None:
 
                 st3_raw = str(row.get("ST3", "")).strip()
                 st3_val = "" if st3_raw.lower() == "nan" else st3_raw.upper()
+                st3_norm = limpar_texto(st3_val)
 
                 # N/A ou vazio -> PROCV Baixas
                 if tipo_os in ["N/A", "#N/A", ""]:
                     encontrou = False
-                    if st3_val != "":
-                        if st3_val in baixas_upper:
-                            tipo_os = baixas_upper[st3_val]
+                    if st3_norm != "":
+                        if st3_norm in baixas_norm:
+                            tipo_os = baixas_norm[st3_norm]
                             encontrou = True
                         else:
-                            for k_baixa, v_baixa in baixas_upper.items():
-                                if st3_val in k_baixa or k_baixa in st3_val:
+                            for k_baixa, v_baixa in baixas_norm.items():
+                                if st3_norm in k_baixa or k_baixa in st3_norm:
                                     tipo_os = v_baixa
                                     encontrou = True
                                     break
@@ -506,24 +528,24 @@ if uploaded_aniel is not None:
 
                 # QUEBRAS e ATIVIDADES
                 tipo_servico_raw = str(row.get("Tipo de Serviço", "")).strip()
-                tipo_servico = "" if tipo_servico_raw.lower() == "nan" else tipo_servico_raw.upper()
+                tipo_servico_norm = limpar_texto(tipo_servico_raw)
 
                 obs1_raw = str(row.get("Observação 1", "")).strip()
                 obs1 = "" if obs1_raw.lower() == "nan" else obs1_raw.lower()
 
                 # Quebras
                 quebra_val = ""
-                if tipo_servico in desc_upper:
-                    quebra_val = desc_upper[tipo_servico]
+                if tipo_servico_norm in desc_norm:
+                    quebra_val = desc_norm[tipo_servico_norm]
                 else:
-                    for k_desc, v_desc in desc_upper.items():
-                        if tipo_servico != "" and tipo_servico in k_desc:
+                    for k_desc, v_desc in desc_norm.items():
+                        if tipo_servico_norm != "" and (tipo_servico_norm in k_desc or k_desc in tipo_servico_norm):
                             quebra_val = v_desc
                             break
                 df_aniel.at[idx, "QUEBRAS"] = quebra_val
 
                 # Atividades
-                ts_lower = tipo_servico.lower()
+                ts_lower = tipo_servico_norm.lower()
                 status_ativ = ""
                 if "const" in ts_lower:
                     status_ativ = "CONSTRUÇÃO"
@@ -540,26 +562,25 @@ if uploaded_aniel is not None:
 
                 df_aniel.at[idx, "ATIVIDADES"] = status_ativ
 
-                # Pontos Previstos
-                pontos_prev = row.get("Pontos Prev.", 0)
-                if pd.isna(pontos_prev) or str(pontos_prev).strip() in ["", "0", "0.0", "nan"]:
-                    if tipo_servico in pontos_upper:
-                        df_aniel.at[idx, "Pontos Prev."] = pontos_upper[tipo_servico]
+                # --- PROCV ROBUSTO: Pontos Prev. ---
+                pontos_atual = converter_para_float(row.get("Pontos Prev."))
+                
+                # Se for nulo, vazio ou igual a zero, faz o PROCV
+                if pontos_atual is None or pontos_atual == 0.0:
+                    ponto_encontrado = None
+                    if tipo_servico_norm in pontos_norm:
+                        ponto_encontrado = pontos_norm[tipo_servico_norm]
                     else:
-                        for k_ponto, v_ponto in pontos_upper.items():
-                            if tipo_servico != "" and tipo_servico in k_ponto:
-                                df_aniel.at[idx, "Pontos Prev."] = v_ponto
+                        for k_ponto, v_ponto in pontos_norm.items():
+                            if tipo_servico_norm != "" and (tipo_servico_norm in k_ponto or k_ponto in tipo_servico_norm):
+                                ponto_encontrado = v_ponto
                                 break
-
-                try:
-                    val_p = str(df_aniel.at[idx, "Pontos Prev."]).strip()
-                    if "," in val_p and "." in val_p:
-                        val_p = val_p.replace(".", "").replace(",", ".")
-                    elif "," in val_p:
-                        val_p = val_p.replace(",", ".")
-                    df_aniel.at[idx, "Pontos Prev."] = float(val_p)
-                except Exception:
-                    pass
+                    if ponto_encontrado is not None:
+                        df_aniel.at[idx, "Pontos Prev."] = float(ponto_encontrado)
+                    else:
+                        df_aniel.at[idx, "Pontos Prev."] = 0.0
+                else:
+                    df_aniel.at[idx, "Pontos Prev."] = float(pontos_atual)
 
             # Manter exclusivamente as 16 colunas finais alinhadas
             colunas_finais = [
