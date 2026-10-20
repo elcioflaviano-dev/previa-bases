@@ -81,7 +81,7 @@ def carregar_historico_sheets():
     if conn:
         try:
             df = conn.read(worksheet="Historico_OS", ttl=0)
-            if not df.empty and "Base" in df.columns and "OS_Executadas" in df.columns:
+            if df is not None and not df.empty and "Base" in df.columns and "OS_Executadas" in df.columns:
                 return df
         except Exception:
             pass
@@ -92,25 +92,28 @@ def salvar_historico_sheets(data_str, base, os_exec):
     if conn:
         try:
             df_hist = carregar_historico_sheets()
-            # Remove entrada duplicada para o mesmo dia e base
-            df_hist = df_hist[~((df_hist["Data"] == data_str) & (df_hist["Base"] == base))]
-            nova_linha = pd.DataFrame([{"Data": data_str, "Base": base, "OS_Executadas": int(os_exec)}])
+            df_hist = df_hist[~((df_hist["Data"].astype(str) == str(data_str)) & (df_hist["Base"] == base))]
+            nova_linha = pd.DataFrame([{"Data": str(data_str), "Base": base, "OS_Executadas": int(os_exec)}])
             df_atualizado = pd.concat([df_hist, nova_linha], ignore_index=True)
             conn.update(worksheet="Historico_OS", data=df_atualizado)
-        except Exception as e:
-            st.warning(f"Aviso de sincronização com Google Sheets: {e}")
+        except Exception:
+            pass
 
 def obter_media_acumulada_sheets(base, os_exec_hoje, dias_trabalhados):
     df_hist = carregar_historico_sheets()
     if not df_hist.empty:
         df_base = df_hist[df_hist["Base"] == base]
         if not df_base.empty:
-            # Soma todas as OS dos dias anteriores mais a execução de hoje
             tot_exec = pd.to_numeric(df_base["OS_Executadas"], errors="coerce").fillna(0).sum()
-            return tot_exec / dias_trabalhados
+            data_atual = str(st.session_state.get("data_formatada", ""))
+            if not ((df_base["Data"].astype(str) == data_atual).any()):
+                tot_exec += os_exec_hoje
+            return tot_exec / max(1, dias_trabalhados)
     return float(os_exec_hoje)
 
-# Inicialização de variáveis de sessão
+# --- INICIALIZAÇÃO DE ESTADO ---
+etapas = ["1. Upload de Arquivos", "2. Dados Operacionais por Base", "3. Visualização da Prévia"]
+
 if "pagina" not in st.session_state:
     st.session_state.pagina = "1. Upload de Arquivos"
 if "df_valido" not in st.session_state:
@@ -119,10 +122,24 @@ if "df_aniel_full" not in st.session_state:
     st.session_state.df_aniel_full = None
 if "supervisores_por_base" not in st.session_state:
     st.session_state.supervisores_por_base = {}
+if "processado_sucesso" not in st.session_state:
+    st.session_state.processado_sucesso = False
 
+# Funções de Callback para navegação direta
+def navegar_para_dados():
+    st.session_state.pagina = "2. Dados Operacionais por Base"
+
+def navegar_para_previa():
+    st.session_state.pagina = "3. Visualização da Prévia"
+
+# Menu lateral sincronizado
 st.sidebar.title("Navegação")
-etapas = ["1. Upload de Arquivos", "2. Dados Operacionais por Base", "3. Visualização da Prévia"]
-st.session_state.pagina = st.sidebar.radio("Ir para:", etapas, index=etapas.index(st.session_state.pagina))
+st.session_state.pagina = st.sidebar.radio(
+    "Ir para:",
+    etapas,
+    index=etapas.index(st.session_state.pagina),
+    key="nav_radio"
+)
 
 def ler_arquivo_seguro(uploaded_file):
     uploaded_file.seek(0)
@@ -685,17 +702,24 @@ if st.session_state.pagina == "1. Upload de Arquivos":
                         sups = sorted(df_valido[df_valido["Projeto"].str.upper() == b.upper()]["Supervisor"].unique().tolist())
                         sup_map[b] = sups
                     st.session_state.supervisores_por_base = sup_map
-
-                    st.success("✅ Arquivos carregados e tratados com sucesso!")
-                    if st.button("Ir para Dados Operacionais ➡️"):
-                        st.session_state.pagina = "2. Dados Operacionais por Base"
-                        st.rerun()
+                    st.session_state.processado_sucesso = True
 
                 except Exception as e:
+                    st.session_state.processado_sucesso = False
                     st.error(f"Erro ao processar: {e}")
 
+    # Exibição do botão fora do if do processar (para não sumir ao clicar)
+    if st.session_state.processado_sucesso and st.session_state.df_valido is not None:
+        st.success("✅ Arquivos carregados e tratados com sucesso!")[cite: 11]
+        st.button(
+            "Ir para Dados Operacionais ➡️",
+            type="primary",
+            on_click=navegar_para_dados,
+            key="btn_ir_dados"
+        )[cite: 11]
+
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (CALENDÁRIO 100% AUTOMÁTICO)
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (CALENDÁRIO AUTOMÁTICO)
 # ==============================================================================
 elif st.session_state.pagina == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -759,9 +783,12 @@ elif st.session_state.pagina == "2. Dados Operacionais por Base":
                         st.number_input(f"Montados: {sup}", value=def_m, key=f"m_{b}_{sup}")
 
         st.markdown("---")
-        if st.button("📊 Sincronizar Google Sheets e Gerar Prévia Executiva", type="primary"):
-            st.session_state.pagina = "3. Visualização da Prévia"
-            st.rerun()
+        st.button(
+            "📊 Sincronizar Google Sheets e Gerar Prévia Executiva",
+            type="primary",
+            on_click=navegar_para_previa,
+            key="btn_ir_previa"
+        )
 
 # ==============================================================================
 # PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (DIRETORIA)
@@ -904,10 +931,7 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
 
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
-            # Sincroniza e salva o executado de hoje no Google Sheets central
             salvar_historico_sheets(data_formatada, b, res_b["produtivo"])
-            
-            # Obtém a média acumulada real registrada no Google Sheets
             media_acum_b = obter_media_acumulada_sheets(b, res_b["produtivo"], dias_trab)
             proj_os_b = int(round(media_acum_b * dias_uteis))
             
@@ -992,7 +1016,7 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
                 </tr>
                 """)
 
-        # Total Geral
+        # Linha Total
         g_den_geral = g_quebra + g_prod
         g_efic = (max(0.0, 1.0 - (g_quebra / g_den_geral)) * 100) if g_den_geral > 0 else 0.0
         g_media_os = (g_prod / g_montados) if g_montados > 0 else 0.0
