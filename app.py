@@ -9,11 +9,329 @@ st.set_page_config(
 
 st.title("📊 Painel Operacional - Tratamento da Base Aniel")
 st.write(
-    "Carregue os ficheiros operacionais necessários (Aniel, TOA, Baixas, etc.)"
-    " para aplicar todas as regras de cruzamento."
+    "Carregue a base Aniel e os ficheiros do TOA. As tabelas de Baixas, Pontos e"
+    " Descrição de OS já estão integradas no sistema!"
 )
 
-# Uploaders separados para cada base necessária
+# Dicionários de referência integrados diretamente no código (PROCV automático)
+BAIXAS_DICT = {
+    "100 - AGENDAMENTO NAO CUMPRIDO": "IMPRODUTIVA",
+    "101 - ENDERECO NAO LOCALIZADO": "IMPRODUTIVA",
+    "103 - CHUVA": "IMPRODUTIVA",
+    "104 - Falta De Material": "IMPRODUTIVA",
+    "105 - Sem Energia Eletrica Na Regiao/Predio/Residencia": "IMPRODUTIVA",
+    "106 - CLIENTE AUSENTE": "IMPRODUTIVA",
+    "107 - ENTRADA NAO AUTORIZADA": "IMPRODUTIVA",
+    "108 - Realizar Obra Civil ou alteracao rede eletrica": "IMPRODUTIVA",
+    "110 - PROBLEMA NA TUBULACAO": "IMPRODUTIVA",
+    "112 - SEM ACESSO AO DG / SOTAO / COMODO": "IMPRODUTIVA",
+    "113 - Sem TV / Computador Na Residencia/ Celular": "IMPRODUTIVA",
+    "114 - Habilitação telefonica não ok": "IMPRODUTIVA",
+    "125 - CLIENTE DESISTE DA AGENDA": "IMPRODUTIVA",
+    "203 - REDE EXTERNA COM PROBLEMA": "IMPRODUTIVA",
+    "204 - Backbone Com Problema": "IMPRODUTIVA",
+    "205 - Falta Tap Ou Passivo / Tap Ou Passivo Lotado": "IMPRODUTIVA",
+    "206 - PREDIO SEM BACKBONE": "IMPRODUTIVA",
+    "211 - FALTA NAP/NAP LOTADA": "IMPRODUTIVA",
+    "217 - BACKBONE GPON COM PROBLEMA": "IMPRODUTIVA",
+    "301 - TIPO DE OS INCORRETA": "IMPRODUTIVA",
+    "302 - DESISTENCIA DA ASSINATURA / SERVICO": "IMPRODUTIVA",
+    "303 - INST MODELO CABO CASA NAO ACEITA PELO CLIENTE": "IMPRODUTIVA",
+    "305 - RUA NAO CABEADA": "IMPRODUTIVA",
+    "306 - NAO RESIDE NO ENDERECO": "IMPRODUTIVA",
+    "307 - Residencia Em Construcao / Reforma": "IMPRODUTIVA",
+    "308 - INSTALACAO NAO CONTEMPLARA PADRAO": "IMPRODUTIVA",
+    "312 - CLIENTE NAO SOLICITOU O SERVICO": "IMPRODUTIVA",
+    "316 - RUA NAO CABEADA GPON": "IMPRODUTIVA",
+    "328 - Entrega Concluida": "PRODUTIVA",
+    "400 - Informacao / Correcao Cadastral": "IMPRODUTIVA",
+    "402 - Divergencia de dados cadastrais": "IMPRODUTIVA",
+    "408 - Serviço Concluído sem Movimentação de Terminal": "PRODUTIVA",
+    "409 - SERVICO CONCLUIDO": "PRODUTIVA",
+    "425 - Troca De Tecnologia": "PRODUTIVA",
+    "430 - Equipamento Retirado": "PRODUTIVA",
+    "440 - Equipamento Roubado / Furtado / Extraviado": "PRODUTIVA",
+    "467 - Resolvido Durante a Vistoria": "PRODUTIVA",
+    "470 - CASO IMPROCEDENTE": "PRODUTIVA",
+    "474 - REPOSICIONADO O EXTENSOR": "PRODUTIVA",
+    "475 - VELOCIDADE DO EXTENSOR CONFORME CONTRATADO": "PRODUTIVA",
+    "477 - INSTALACAO MESH CABEADA": "PRODUTIVA",
+    "500 - READEQUACAO DE SINAL - PASSIVOS": "PRODUTIVA",
+    "501 - Amplificador Equalizado": "PRODUTIVA",
+    "502 - Amplificador Com Defeito - Troca": "PRODUTIVA",
+    "505 - Passivo Interno Queim./Degrad. - Troca": "PRODUTIVA",
+    "506 - Passivo Interno Fora Do Padrão - Troca": "PRODUTIVA",
+    "507 - Passivo MDU Queim./Degrad. - Troca": "PRODUTIVA",
+    "509 - Cable Isolator Danificado/Queimado - Troca": "PRODUTIVA",
+    "510 - Fonte Com Defeito - Troca": "PRODUTIVA",
+    "514 - Envio De Hit - Habilitar Canais": "PRODUTIVA",
+    "515 - Envio De Hit - Correção Do Update ID": "PRODUTIVA",
+    "516 - T.T - TRAVADO": "PRODUTIVA",
+    "517 - T.T - Queimado": "PRODUTIVA",
+    "518 - T.T - Não Habilita / Não Sincroniza": "PRODUTIVA",
+    "519 - T.T - Não Grava": "PRODUTIVA",
+    "520 - T.T - Não Atualiza SW": "PRODUTIVA",
+    "521 - T.T - Intermitente": "PRODUTIVA",
+    "522 - T.T - IN / OUT Queimadas": "PRODUTIVA",
+    "523 - T.T - Alcance Wifi": "PRODUTIVA",
+    "524 - T.T - Solic. Cliente": "PRODUTIVA",
+    "525 - T.T - Falha em Imagem/Quadriculando": "PRODUTIVA",
+    "526 - T.T - Erro de Leitura Smart": "PRODUTIVA",
+    "527 - T.T - Não Navega": "PRODUTIVA",
+    "530 - T.T Por Outro Colocado No Mesmo Serviço": "PRODUTIVA",
+    "533 - Reset Na Config Terminal - Travado": "PRODUTIVA",
+    "534 - RESET NA CONFIG TERMINAL - SOLICIT SENHA": "PRODUTIVA",
+    "535 - Reset Na Config Terminal - Não Atualiza": "PRODUTIVA",
+    "536 - Reconfigurado Roteador do cliente": "PRODUTIVA",
+    "537 - Reconfigurado eMTA/Roteador NET-WIFI": "PRODUTIVA",
+    "538 - Reconfiguração Do Formato Da Imagem": "PRODUTIVA",
+    "539 - Reconfiguração De Audio": "PRODUTIVA",
+    "540 - Conector Interno Oxidado - Troca": "PRODUTIVA",
+    "541 - Conector Interno Mal Feito - Troca": "PRODUTIVA",
+    "542 - Conector Interno Fora Do Padrão - Troca": "PRODUTIVA",
+    "544 - Conector TAP Mal Feito - Troca": "PRODUTIVA",
+    "545 - Conector TAP - Fora Do Padrão - Troca": "PRODUTIVA",
+    "546 - Conector MDU Oxidado - Troca": "PRODUTIVA",
+    "547 - CONECTOR MDU MAL FEITO - TROCA": "PRODUTIVA",
+    "549 - Velocidade Do Virtua Conforme Contratada": "PRODUTIVA",
+    "551 - Sintonia Efetuada - AV/HDMI": "PRODUTIVA",
+    "552 - INSTRUCOES DO USO DA INTERATIVIDADE": "PRODUTIVA",
+    "553 - Instruções De Uso Do Controle Remoto": "PRODUTIVA",
+    "554 - Instruções Sobre Smart Card": "PRODUTIVA",
+    "555 - Sem Defeito No Produto Virtua Reclamado": "PRODUTIVA",
+    "556 - Sem Defeito No Produto TV Reclamado": "PRODUTIVA",
+    "557 - Sem Defeito No Produto Netfone Reclamado": "PRODUTIVA",
+    "558 - Boot No Terminal": "PRODUTIVA",
+    "560 - Equipamento / Rede De Dados Cliente Com Defeito": "PRODUTIVA",
+    "562 - Cabo Reconectado/Identificado": "PRODUTIVA",
+    "563 - RECONEXAO DOS CABOS NO EQUIPAMENTO DO CLIENTE": "PRODUTIVA",
+    "564 - Cabos Especiais Com Defeito - Troca": "PRODUTIVA",
+    "565 - Entrega De Cabos Especiais": "PRODUTIVA",
+    "566 - Refeito Drop": "PRODUTIVA",
+    "567 - Refeito Cabeamento Coaxial": "PRODUTIVA",
+    "568 - Cabeamento Telefônico Refeito": "PRODUTIVA",
+    "569 - Necessário Refazer Cabeamento Telefônico": "PRODUTIVA",
+    "570 - Necessário Refazer Cabeamento Coaxial": "PRODUTIVA",
+    "574 - CORRECAO EFETUADA NO DATA CENTER": "PRODUTIVA",
+    "575 - Tomada Telefone Com Problema - Troca": "PRODUTIVA",
+    "580 - Conexões De Rede De Dados Refeitas": "PRODUTIVA",
+    "582 - ROTEADOR COM PROBLEMA": "PRODUTIVA",
+    "584 - CONECTOR OPTICO INTERNO DANIFICADO": "PRODUTIVA",
+    "590 - PTO COM DEFEITO TROCA": "PRODUTIVA",
+    "EM ROTA": "EM ABERTO",
+    "INICIADO": "EM ABERTO",
+    "PENDENTE": "EM ABERTO",
+}
+
+PONTOS_DICT = {
+    "ADESAO - INSTALACAO DE ASSINATURA": 3.50,
+    "ADESAO ENTREGA STREAMING": 3.50,
+    "ADESAO - INSTALACAO DE ASSINATURA DIGITAL": 3.50,
+    "MUDANCA DE ENDERECO - INSTALAR ASSINATURA": 3.00,
+    "MUDANCA DE ENDERECO - INSTALAR ASSINATURA DIGITAL": 3.00,
+    "MUDANCA DE ENDERECO - ENTREGA STREAMING": 3.00,
+    "MUDANCA DE ENDERECO - ENTREGA ADC STREAMING": 3.00,
+    "DESOBSTRUCAO - INSTALACAO DE ASSINATURA": 3.00,
+    "ADESAO - INSTALAR PONTO VIRTUA": 2.50,
+    "INSTALAR PONTO VIRTUA": 2.50,
+    "REFAZER MANUTENCAO": 2.50,
+    "REFAZER INSTALACAO": 2.50,
+    "REFAZER MANUTENCAO PON": 2.50,
+    "REFAZER INSTALACAO DIGITAL": 2.50,
+    "MUDANCA DE PACOTE": 2.30,
+    "MUD PACOTE ENTREGA STREAMING": 2.30,
+    "MUDANCA DE PACOTE DIGITAL": 2.30,
+    "MUDANCA DE PACOTE DOWN HDD": 2.30,
+    "MUDANCA DE PACOTE RET HDD": 2.30,
+    "INSTALACAO WIFI MESH": 2.00,
+    "INSTALAR TV BASE": 2.00,
+    "REINSTALACAO - ASSINATURA": 2.00,
+    "INSTALAR CABEAMENTO MESH": 2.00,
+    "INST PONTO EXTENSAO REDE VIRTUA": 2.00,
+    "REINSTALACAO - ASSINATURA DIGITAL": 2.00,
+    "VISITA TECNICA - VIRTUA": 1.80,
+    "VISITA TECNICA DIGITAL": 1.80,
+    "VISITA TECNICA - VOIP": 1.80,
+    "VISITA TECNICA STREAMING": 1.80,
+    "VISITA TECNICA": 1.80,
+    "VISITA TECNICA - SMART HOME": 1.80,
+    "MUDANCA DE ENDERECO - INSTALAR PONTO ADICIONAL VIRTUA": 1.60,
+    "INSTALAR SERVICO CONEXAO ADICIONAL DIGITAL": 1.60,
+    "MUDANCA DE LOCAL DE PONTO": 1.60,
+    "MUDANCA DE LOCAL DE PONTO DIGITAL": 1.60,
+    "ADESAO - INSTALAR SERVICO CONEXAO ADICIONAL DIGITAL": 1.60,
+    "MUDANCA DE LOCAL DE PONTO VOIP": 1.60,
+    "TROCA DECODER PARA ATUALIZACAO DIGITAL": 1.50,
+    "TROCA DECODER PARA ATUALIZACAO DIGITAL 4K": 1.50,
+    "TROCA DE EQUIPAMENTO HD": 1.50,
+    "BASE ENTREGA STREAMING": 1.50,
+    "INSTALACAO EXTENSAO VOIP": 1.50,
+    "MODERNIZACAO EXTENSOR WIFI MESH": 1.50,
+    "TROCA EQUIPAMENTO PARA ATUALIZACAO TECNOLOGIA": 1.50,
+    "TROCA DE EQUIPAMENTO WIFI": 1.50,
+    "MODERNIZACAO EQUIPAMENTO WIFI": 1.50,
+    "TROCA DE EQUIPAMENTO STREAMING": 1.50,
+    "MODERNIZACAO EQUIPAMENTO DIGITAL": 1.50,
+    "MIGRAÇÃO GPON (adição na MP GPON)": 1.40,
+    "REINSTALACAO - PONTO ADICIONAL VIRTUA": 1.40,
+    "REINSTALACAO - SERVICO CONEXAO ADICIONAL DIGITAL": 1.40,
+    "REINSTALACAO - ASSINATURA VOIP": 1.30,
+    "REINSTALACAO ENTREGA STREAMING": 1.30,
+    "REINSTALACAO ENTREGA ADC STREAMING": 1.30,
+    "REINSTALACAO - PONTO ADICIONAL VOIP": 1.30,
+    "MUDANCA DE ENDERECO - INSTALAR PONTO VOIP": 1.20,
+    "ADESAO - INSTALAR PONTO VOIP": 1.20,
+    "INSTALAR PONTO VOIP": 1.20,
+    "MUDANCA ENDERECO - INSTALAR SERVICO CONEXAO ADIC DIG": 1.20,
+    "ADESAO - INSTALAR PONTO PORTABILIDADE": 1.20,
+    "ADESAO ENTREGA ADC STREAMING": 1.20,
+    "INSTALAR PONTO PORTABILIDADE": 1.20,
+    "BASE ENTREGA ADC STREAMING": 1.20,
+    "MUDANCA ENDERECO - INSTALAR SERVICO CONEXAO ADIC": 1.20,
+    "REINSTALACAO - SERVICO CONEXAO ADICIONAL": 1.20,
+    "ENVIO DE CHIP VIA TECNICO": 0.50,
+    "RETIRAR PONTO": 0.50,
+    "RETIRAR PONTO VOIP": 0.50,
+    "RETIRAR EQUIPAMENTO": 0.50,
+    "RETIRADA WIFI MESH": 0.50,
+    "ENTREGA DE CABOS ESPECIAIS E CONEXOES": 0.50,
+    "RETIRAR EMTA": 0.50,
+    "INSTALACAO DE CABO HFC": 0.10,
+    "INSTALACAO DE CABO GPON": 0.10,
+    "CONSTRUCAO MDU GPON": 0.00,
+    "APOIO CONSTRUCAO GPON MDU": 0.00,
+    "MANUTENCAO PREVENTIVA INDOOR I": 1.00,
+    "LIMPEZA DE RUIDO INDOOR": 1.00,
+    "SUBSTITUICAO DE CONTROLE REMOTO DIGITAL": 1.00,
+    "MODERNIZACAO BL": 1.00,
+    "RETORNO DE CREDENCIADA": 0.00,
+    "BLINDAGEM TV ATUALIZACAO DIG": 1.00,
+    "MANUTENCAO REPARO NO DROP": 1.00,
+    "VISITA TECNICA WIFI MESH": 1.00,
+    "MANUTENCAO CORRETIVA - DEGRADACAO MDU": 1.00,
+    "MANUTENCAO CORRETIVA - MDU": 1.00,
+    "MANUTENCAO CORRETIVA - MDU GPON": 1.00,
+    "ATENDIMENTO PRIORITARIO MANUTENCAO": 1.00,
+    "CONFIGURACAO STREAMING": 1.00,
+    "MUDANCA DE ENDERECO - RETIRAR PONTOS": 1.00,
+}
+
+DESC_OS_DICT = {
+    "ADESAO - INSTALACAO DE ASSINATURA": "INSTALAÇÃO",
+    "ADESAO - INSTALACAO DE ASSINATURA DIGITAL": "INSTALAÇÃO",
+    "ADESAO - INSTALAR PONTO PORTABILIDADE": "INSTALAÇÃO",
+    "ADESAO - INSTALAR PONTO VIRTUA": "INSTALAÇÃO",
+    "ADESAO - INSTALAR PONTO VOIP": "INSTALAÇÃO",
+    "ADESAO - INSTALAR SERVICO CONEXAO ADICIONAL": "INSTALAÇÃO",
+    "ADESAO - INSTALAR SERVICO CONEXAO ADICIONAL DIGITAL": "INSTALAÇÃO",
+    "INSTALAR PONTO PORTABILIDADE": "INSTALAÇÃO",
+    "INSTALAR PONTO VIRTUA": "INSTALAÇÃO",
+    "INSTALAR PONTO VOIP": "INSTALAÇÃO",
+    "INSTALAR SERVICO CONEXAO ADICIONAL": "INSTALAÇÃO",
+    "INSTALAR SERVICO CONEXAO ADICIONAL DIGITAL": "INSTALAÇÃO",
+    "ADESAO ENTREGA STREAMING": "INSTALAÇÃO",
+    "DESOBSTRUCAO - INSTALACAO DE ASSINATURA": "INSTALAÇÃO",
+    "ADESAO ENTREGA ADC STREAMING": "INSTALAÇÃO",
+    "RETORNO DE CREDENCIADA": "RETORNO",
+    "ENTREGA EQUIPAMENTO HDD": "SERVIÇOS",
+    "ENVIO DE CHIP VIA TECNICO": "INSTALAÇÃO",
+    "INSTALACAO EXTENSAO VOIP": "SERVIÇOS",
+    "MUDANCA DE ENDERECO - INSTALAR ASSINATURA": "SERVIÇOS",
+    "MUDANCA DE ENDERECO - INSTALAR ASSINATURA DIGITAL": "SERVIÇOS",
+    "MUDANCA DE ENDERECO - INSTALAR PONTO ADICIONAL VIRTUA": "SERVIÇOS",
+    "MUDANCA DE ENDERECO - INSTALAR PONTO VOIP": "SERVIÇOS",
+    "MUDANCA DE LOCAL DE PONTO": "SERVIÇOS",
+    "MUDANCA DE LOCAL DE PONTO DIGITAL": "SERVIÇOS",
+    "MUDANCA DE LOCAL DE PONTO VOIP": "SERVIÇOS",
+    "MUDANCA DE PACOTE": "SERVIÇOS",
+    "MUDANCA DE PACOTE DIGITAL": "SERVIÇOS",
+    "MUDANCA ENDERECO - INSTALAR SERVICO CONEXAO ADIC": "SERVIÇOS",
+    "MUDANCA ENDERECO - INSTALAR SERVICO CONEXAO ADIC DIG": "SERVIÇOS",
+    "REFAZER INSTALACAO": "SERVIÇOS",
+    "REFAZER INSTALACAO DIGITAL": "SERVIÇOS",
+    "REFAZER MANUTENCAO": "SERVIÇOS",
+    "REINSTALACAO - ASSINATURA": "SERVIÇOS",
+    "REINSTALACAO - ASSINATURA DIGITAL": "SERVIÇOS",
+    "REINSTALACAO - ASSINATURA VOIP": "SERVIÇOS",
+    "REINSTALACAO - PONTO ADICIONAL VIRTUA": "SERVIÇOS",
+    "REINSTALACAO - PONTO ADICIONAL VOIP": "SERVIÇOS",
+    "REINSTALACAO - SERVICO CONEXAO ADICIONAL DIGITAL": "SERVIÇOS",
+    "RETIRAR PONTO": "SERVIÇOS",
+    "RETIRAR PONTO VOIP": "SERVIÇOS",
+    "TROCA DE EQUIPAMENTO WIFI": "SERVIÇOS",
+    "TROCA DE EQUIPAMENTO PARA ATUALIZACAO TECNOLOGIA": "SERVIÇOS",
+    "TROCA TECNOLOGIA SMART": "SERVIÇOS",
+    "INSTALAR TV BASE": "INSTALAÇÃO",
+    "INST PONTO EXTENSAO REDE VIRTUA": "INSTALAÇÃO",
+    "MUDANCA DE PACOTE UP HDD": "SERVIÇOS",
+    "BASE ENTREGA STREAMING": "SERVIÇOS",
+    "ENTREGA DE CABOS ESPECIAIS E CONEXOES": "SERVIÇOS",
+    "MUDANCA DE ENDERECO - ENTREGA STREAMING": "SERVIÇOS",
+    "MUDANCA DE PACOTE DOWN HDD": "SERVIÇOS",
+    "MODERNIZACAO EQUIPAMENTO WIFI": "SERVIÇOS",
+    "INSTALACAO WIFI MESH": "INSTALAÇÃO",
+    "MUD PACOTE ENTREGA STREAMING": "SERVIÇOS",
+    "VISTORIA DE CASOS ESPECIAIS EPO": "SERVIÇOS",
+    "MUDANCA DE PACOTE RET HDD": "SERVIÇOS",
+    "VISITA TECNICA - VIRTUA": "SERVIÇOS",
+    "VISITA TECNICA DIGITAL": "SERVIÇOS",
+    "VISITA TECNICA - VOIP": "SERVIÇOS",
+    "DESOBSTRUCAO - INSTALACAO PONTO ADICIONAL": "SERVIÇOS",
+    "REINSTALACAO ENTREGA STREAMING": "SERVIÇOS",
+    "REINSTALACAO - SERVICO CONEXAO ADICIONAL": "SERVIÇOS",
+    "BASE ENTREGA ADC STREAMING": "SERVIÇOS",
+    "INSTALAR CABEAMENTO MESH": "INSTALAÇÃO",
+    "REINSTALACAO ENTREGA ADC STREAMING": "SERVIÇOS",
+    "MUDANCA DE ENDERECO - ENTREGA ADC STREAMING": "SERVIÇOS",
+    "VISITA TECNICA WIFI MESH": "SERVIÇOS",
+    "TROCA DECODER PARA ATUALIZACAO DIGITAL": "SERVIÇOS",
+    "INSTALACAO DE CABO GPON": "INSTALAÇÃO",
+    "SUBS DE CONTROLE REMOTO VOZ TV": "SERVIÇOS",
+    "INSTALACAO DE CABO HFC": "INSTALAÇÃO",
+    "MUDANCA DE ENDERECO - RETIRAR PONTOS": "SERVIÇOS",
+    "CONFIGURACAO STREAMING": "SERVIÇOS",
+    "SUBSTITUICAO DE CONTROLE REMOTO DIGITAL": "SERVIÇOS",
+    "ADESAO - INSTALAR SERVICO CONEXAO ADICIONAL DIGITA": "INSTALAÇÃO",
+    "TROCA DECODER PARA ATUALIZACAO DIGITAL 4K": "SERVIÇOS",
+    "VISITA TECNICA": "SERVIÇOS",
+    "REFAZER MANUTENCAO PON": "SERVIÇOS",
+    "ENTREGA DE CONTROLE REMOTO VOZ": "SERVIÇOS",
+    "LIMPEZA DE RUIDO INDOOR": "SERVIÇOS",
+    "MANUTENCAO RETORNO COP": "SERVIÇOS",
+    "INSTALACAO CABO DE REDE STREAMING": "INSTALAÇÃO",
+    "MANUTENCAO PREVENTIVA INDOOR": "SERVIÇOS",
+    "INSTALACAO WIFI 360": "INSTALAÇÃO",
+    "TROCA DE EQUIPAMENTO HD": "SERVIÇOS",
+    "TROCA DE EQUIPAMENTO STREAMING": "SERVIÇOS",
+    "ENTREGA EXPRESS CAMERA ADICIONAL": "SERVIÇOS",
+    "DESOBSTRUCAO - REINSTALACAO DE ASSINATURA": "SERVIÇOS",
+    "ADESAO - INSTALAR KIT MONITORAMENTO": "INSTALAÇÃO",
+    "TROCA PARA ATUALIZACAO DECODER": "SERVIÇOS",
+    "SUBS DE CONTROLE REMOTO VOZ": "SERVIÇOS",
+    "MODERNIZACAO EXTENSOR WIFI MESH": "SERVIÇOS",
+    "RETIRADA WIFI MESH": "SERVIÇOS",
+    "BLINDAGEM TV ATUALIZACAO DIG": "SERVIÇOS",
+    "MANUTENCAO REPARO NO DROP": "SERVIÇOS",
+    "MODERNIZACAO EQUIPAMENTO DIGITAL": "SERVIÇOS",
+    "SUBS CONTROLE REMOTO STREAMING": "SERVIÇOS",
+    "APOIO CONSTRUCAO GPON MDU": "SERVIÇOS",
+    "CONSTRUCAO MDU GPON": "SERVIÇOS",
+    "MANUTENCAO CORRETIVA - DEGRADACAO MDU": "SERVIÇOS",
+    "MANUTENCAO CORRETIVA - MDU": "SERVIÇOS",
+    "MANUTENCAO PREVENTIVA INDOOR I": "SERVIÇOS",
+    "VISITA TECNICA STREAMING": "SERVIÇOS",
+    "VISTORIA DE CASOS ESPECIAIS IAT": "SERVIÇOS",
+    "MANUTENCAO CORRETIVA - MDU GPON": "SERVIÇOS",
+    "EXECUCAO MDU": "SERVIÇOS",
+    "VISITA TECNICA - SMART HOME": "SERVIÇOS",
+    "CONSTRUCAO MDU GPON ME": "SERVIÇOS",
+    "MUDANCA DE ENDERECO - INSTALAR PONTO ADICIONAL VIR": "SERVIÇOS",
+    "MODERNIZACAO BL": "SERVIÇOS",
+    "ATENDIMENTO PRIORITARIO MANUTENCAO": "SERVIÇOS",
+    "VISITA TECNICA NOW": "SERVIÇOS",
+}
+
+# Componentes de Upload na Interface do Streamlit
 uploaded_aniel = st.file_uploader(
     "Carregar Ficheiro ANIEL (.xlsx ou .xlsm)",
     type=["xlsx", "xlsm"],
@@ -25,19 +343,13 @@ uploaded_toa = st.file_uploader(
     accept_multiple_files=True,
     key="toa",
 )
-uploaded_aux = st.file_uploader(
-    "Carregar Ficheiro Auxiliar (Baixas, Desc OS, Pontos Aniel - Opcional)",
-    type=["xlsx", "xlsm"],
-    key="aux",
-)
 
 if uploaded_aniel is not None:
   try:
-    with st.spinner("A processar os dados... Por favor, aguarde."):
-      # Lendo a base Aniel
+    with st.spinner("A processar os dados e aplicar regras..."):
       df_aniel = pd.read_excel(uploaded_aniel)
 
-      # Unindo os ficheiros do TOA se houver mais do que um
+      # Unindo os ficheiros do TOA
       df_toa = None
       if uploaded_toa:
         toa_dfs = []
@@ -47,19 +359,6 @@ if uploaded_aniel is not None:
           else:
             toa_dfs.append(pd.read_excel(file))
         df_toa = pd.concat(toa_dfs, ignore_index=True)
-
-      # Lendo abas auxiliares se o ficheiro auxiliar foi enviado
-      df_desc_os = None
-      df_pontos = None
-      df_baixas = None
-      if uploaded_aux:
-        xls_aux = pd.ExcelFile(uploaded_aux)
-        if "DESC OS" in xls_aux.sheet_names:
-          df_desc_os = pd.read_excel(xls_aux, sheet_name="DESC OS")
-        if "PONTOS ANIEL" in xls_aux.sheet_names:
-          df_pontos = pd.read_excel(xls_aux, sheet_name="PONTOS ANIEL")
-        if "BAIXAS" in xls_aux.sheet_names:
-          df_baixas = pd.read_excel(xls_aux, sheet_name="BAIXAS")
 
       # 1. Cruzamento com o TOA
       if df_toa is not None and not df_toa.empty:
@@ -83,19 +382,20 @@ if uploaded_aniel is not None:
             df_aniel.at[idx, "CANCELADAS_TEMP"] = np.nan
             df_aniel.at[idx, "PME"] = np.nan
 
-      # 2. Tratamento "N/A" -> PROCV ST3 na aba Baixas
-      if df_baixas is not None and not df_baixas.empty:
-        baixas_dict = (
-            df_baixas.set_index(df_baixas.columns[0]).iloc[:, 0].to_dict()
-        )
-        for idx, row in df_aniel.iterrows():
-          tipo_os = str(row.get("Tipo de OS", "")).strip().upper()
-          if tipo_os in ["N/A", "#N/A", ""]:
-            st3_val = str(row.get("ST3", "")).strip()
-            if st3_val in baixas_dict:
-              df_aniel.at[idx, "Tipo de OS"] = baixas_dict[st3_val]
-            else:
-              df_aniel.at[idx, "Tipo de OS"] = "EM ABERTO"
+      # 2. Tratamento "N/A" -> PROCV ST3 na tabela de Baixas integrada
+      for idx, row in df_aniel.iterrows():
+        tipo_os = str(row.get("Tipo de OS", "")).strip().upper()
+        if tipo_os in ["N/A", "#N/A", ""]:
+          st3_val = str(row.get("ST3", "")).strip()
+          # Procura no dicionário de Baixas
+          encontrou = False
+          for k_baixa, v_baixa in BAIXAS_DICT.items():
+            if st3_val.upper() in k_baixa.upper():
+              df_aniel.at[idx, "Tipo de OS"] = v_baixa
+              encontrou = True
+              break
+          if not encontrou:
+            df_aniel.at[idx, "Tipo de OS"] = "EM ABERTO"
 
       # 3. Tratamento "EM ABERTO" com ST1 vazio -> "SAIU DO TOA"
       for idx, row in df_aniel.iterrows():
@@ -128,30 +428,20 @@ if uploaded_aniel is not None:
         else:
           df_aniel.at[idx, "CANCELADAS"] = ""
 
-      # 7. Criar colunas Quebras e Atividades
-      desc_dict = (
-          df_desc_os.set_index(df_desc_os.columns[0])[df_desc_os.columns[1]]
-          .to_dict()
-          if df_desc_os is not None
-          else {}
-      )
-      pontos_dict = (
-          df_pontos.set_index(df_pontos.columns[0])[df_pontos.columns[1]]
-          .to_dict()
-          if df_pontos is not None
-          else {}
-      )
-
+      # 7. Criar colunas Quebras e Atividades usando DESC_OS_DICT e PONTOS_DICT
       for idx, row in df_aniel.iterrows():
-        tipo_servico = str(row.get("Tipo de Serviço", "")).strip()
+        tipo_servico = str(row.get("Tipo de Serviço", "")).strip().upper()
         obs1 = str(row.get("Observação 1", "")).lower()
-        tipo_servico_lower = tipo_servico.lower()
 
-        if tipo_servico in desc_dict:
-          df_aniel.at[idx, "QUEBRAS"] = desc_dict[tipo_servico]
+        # Quebras via Descrição OS
+        for k_desc, v_desc in DESC_OS_DICT.items():
+          if tipo_servico in k_desc.upper():
+            df_aniel.at[idx, "QUEBRAS"] = v_desc
+            break
 
+        # Atividades
         status_ativ = ""
-        if "const" in tipo_servico_lower:
+        if "const" in tipo_servico.lower():
           status_ativ = "CONSTRUÇÃO"
         elif (
             "pon " in obs1
@@ -161,8 +451,8 @@ if uploaded_aniel is not None:
         ):
           status_ativ = "GPON"
           if (
-              "instalacao de cabo gpon" in tipo_servico_lower
-              or "mudanca de pacote" in tipo_servico_lower
+              "instalacao de cabo gpon" in tipo_servico.lower()
+              or "mudanca de pacote" in tipo_servico.lower()
           ):
             status_ativ = "MIGRAÇÃO"
 
@@ -171,17 +461,19 @@ if uploaded_aniel is not None:
 
         if (
             status_ativ == "HFC"
-            and "instalacao de cabo gpon" in tipo_servico_lower
+            and "instalacao de cabo gpon" in tipo_servico.lower()
         ):
           status_ativ = "MIGRAÇÃO"
 
         df_aniel.at[idx, "ATIVIDADES"] = status_ativ
 
-        # Pontos Previstos
+        # Pontos Previstos via Pontos Aniel
         pontos_prev = row.get("Pontos Prev.", 0)
         if pd.isna(pontos_prev) or pontos_prev == 0 or pontos_prev == "":
-          if tipo_servico in pontos_dict:
-            df_aniel.at[idx, "Pontos Prev."] = pontos_dict[tipo_servico]
+          for k_ponto, v_ponto in PONTOS_DICT.items():
+            if tipo_servico in k_ponto.upper():
+              df_aniel.at[idx, "Pontos Prev."] = v_ponto
+              break
 
         try:
           val_p = (
