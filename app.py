@@ -10,8 +10,21 @@ st.set_page_config(
     layout="wide"
 )
 
+# Estilização CSS adicional para cabeçalhos e cartões
+st.markdown("""
+<style>
+    .metric-card {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 15px;
+        border-left: 5px solid #2e7d32;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("📈 Apresentação Gerencial de Resultados - Diretoria")
-st.markdown("Painel executivo com Projeção calculada por Média Diária × Dias Úteis (Seg a Sáb).")
+st.markdown("Visão executiva integrada com totalização geral e indicadores consolidados.")
 
 def ler_arquivo_seguro(uploaded_file):
     uploaded_file.seek(0)
@@ -382,20 +395,19 @@ DESC_OS_DICT = {
     "VISITA TECNICA NOW": "SERVIÇOS",
 }
 
-# --- BARRA LATERAL: ENTRADAS E CALENDÁRIO OPERACIONAL ---
+# --- BARRA LATERAL: ENTRADAS E CALENDÁRIO ---
 st.sidebar.header("📁 Carregamento de Bases")
 uploaded_aniel = st.sidebar.file_uploader("Ficheiro ANIEL (.xlsx ou .xlsm)", type=["xlsx", "xlsm", "csv"], key="aniel")
 uploaded_toa = st.sidebar.file_uploader("Ficheiros TOA (Múltiplos)", type=["xlsx", "xlsm", "csv"], accept_multiple_files=True, key="toa")
 
 st.sidebar.markdown("---")
 st.sidebar.header("📅 Calendário de Projeção")
-dias_uteis_mes = st.sidebar.number_input("Dias Úteis no Mês (Seg a Sáb)", min_value=20, max_value=31, value=27, help="Multiplicador da média diária (=G3*27)")
-dias_trabalhados = st.sidebar.number_input("Dias Úteis Trabalhados até Hoje", min_value=1, max_value=dias_uteis_mes, value=16, help="Quantidade de dias executados para compor a média (I3:AI3)")
+dias_uteis_mes = st.sidebar.number_input("Dias Úteis no Mês (Seg a Sáb)", min_value=20, max_value=31, value=27)
+dias_trabalhados = st.sidebar.number_input("Dias Úteis Trabalhados até Hoje", min_value=1, max_value=dias_uteis_mes, value=16)
 
 bases_padrao = ["NET-ABCDM", "NET-Guarulhos", "NET-LESTE"]
 inputs_base = {}
 
-# Parâmetros padrão alinhados com o histórico da planilha
 dados_iniciais = {
     "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "meta_cons": 552, "hoje_cons": 12, "ganho_os": 27, "media_os_mes": 366.5},
     "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "meta_cons": 608, "hoje_cons": 19, "ganho_os": 40, "media_os_mes": 397.2},
@@ -411,13 +423,11 @@ for base in bases_padrao:
     m = st.sidebar.number_input(f"Montados ({base})", value=d_init["montados"], key=f"mon_{base}")
     meta_os = st.sidebar.number_input(f"Meta O.S. Mês ({base})", value=d_init["meta_os"], key=f"meta_os_{base}")
     
-    # Campo opcional para digitar direto a Média Diária do mês (=MÉDIA(I3:AI3)) ou calcular automaticamente
     med_input = st.sidebar.number_input(
         f"Média Diária Acumulada G3 ({base})",
         value=float(d_init["media_os_mes"]),
         step=0.1,
-        key=f"med_{base}",
-        help="Caso deixe 0, o sistema usa o Proj. Dia calculado da prévia de hoje como média"
+        key=f"med_{base}"
     )
     
     meta_cons = st.sidebar.number_input(f"Meta Consultivo ({base})", value=d_init["meta_cons"], key=f"meta_cons_{base}")
@@ -432,7 +442,7 @@ for base in bases_padrao:
 
 if uploaded_aniel is not None:
     try:
-        with st.spinner("Processando tratamento completo e aplicando projeções..."):
+        with st.spinner("Processando indicadores executivos e gerando tabelas coloridas..."):
             df_aniel = ler_arquivo_seguro(uploaded_aniel)
             df_aniel.columns = [str(c).strip() for c in df_aniel.columns]
 
@@ -599,7 +609,7 @@ if uploaded_aniel is not None:
             df_aniel["Supervisor"] = df_aniel["Supervisor"].fillna("").astype(str).str.strip().str.upper()
             df_aniel["Tipo de Serviço"] = df_aniel["Tipo de Serviço"].fillna("").astype(str).str.strip().str.upper()
 
-            # REGRA: Excluir vazios em Supervisor/Tipo de Serviço e IVAN
+            # REGRA: Excluir vazios e IVAN
             df_valido = df_aniel[
                 (df_aniel["Supervisor"] != "") &
                 (df_aniel["Tipo de Serviço"] != "") &
@@ -617,15 +627,11 @@ if uploaded_aniel is not None:
                 os_aberta = len(df_grp[df_grp["Tipo de OS"] == "EM ABERTO"])
                 produtivo = len(df_grp[df_grp["Tipo de OS"] == "PRODUTIVA"])
                 
-                # FÓRMULA: QUEBRA = quebra / (quebra + produtivo)
                 quebra_geral = len(df_grp[df_grp["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])])
                 denom_geral = (quebra_geral + produtivo)
                 pct_quebra_geral = (quebra_geral / denom_geral) if denom_geral > 0 else 0.0
                 
-                # FÓRMULA: EFIC = 1 - a % de quebras
                 eficiencia = max(0.0, 1.0 - pct_quebra_geral)
-                
-                # FÓRMULA: PROJ = produtivo + (em aberto * eficiencia)
                 proj_exec_dia = produtivo + (os_aberta * eficiencia)
                 
                 pontos = df_grp[df_grp["Tipo de OS"] == "PRODUTIVA"]["Pontos Prev."].sum()
@@ -671,33 +677,46 @@ if uploaded_aniel is not None:
                 return {
                     "TOTAL O.S.": tot_os,
                     "O.S. ABERTA": os_aberta,
-                    "Pontos": round(pontos, 0),
-                    "Efic. (%)": f"{eficiencia * 100:.1f}%",
+                    "Pontos": int(round(pontos, 0)),
+                    "Efic. (%)": round(eficiencia * 100, 1),
                     "Média O.S.": round(media_os, 1),
                     "O.S. Exec.": produtivo,
                     "Proj. Dia": round(proj_exec_dia, 1),
                     "O.S Sem Consult": os_sem_consult,
-                    "Quebra INS (%)": f"{quebra_ins:.1f}%",
-                    "Quebra SERV (%)": f"{quebra_serv:.1f}%",
+                    "Quebra INS (%)": round(quebra_ins, 1),
+                    "Quebra SERV (%)": round(quebra_serv, 1),
                     "ND": tot_nd,
-                    "Quebra ND (%)": f"{quebra_nd_pct:.1f}%",
+                    "Quebra ND (%)": round(quebra_nd_pct, 1),
                     "O.S. Canc.": os_canc,
                     "Saiu TOA": saiu_toa,
                     "Total GPON": tot_gpon,
-                    "Quebra GPON": f"{quebra_gpon:.1f}%",
+                    "Quebra GPON": round(quebra_gpon, 1),
                     "Total MIG": tot_mig,
-                    "Quebra MIG": f"{quebra_mig:.1f}%",
+                    "Quebra MIG": round(quebra_mig, 1),
                     "Canc. MIG": mig_canc,
                     "Retorno WO": retorno_wo,
                     "Total PME": tot_pme,
-                    "Quebra PME": f"{quebra_pme:.1f}%",
+                    "Quebra PME": round(quebra_pme, 1),
                     "Canc. PME": pme_canc,
+                    # Dados brutos
                     "_raw_tot_os": tot_os,
                     "_raw_os_aberta": os_aberta,
                     "_raw_produtivo": produtivo,
                     "_raw_quebra_geral": quebra_geral,
                     "_raw_proj_dia": proj_exec_dia,
                     "_raw_pontos": pontos,
+                    "_raw_tot_ins": len(df_ins),
+                    "_raw_q_ins": len(df_ins[df_ins["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
+                    "_raw_tot_serv": len(df_serv),
+                    "_raw_q_serv": len(df_serv[df_serv["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
+                    "_raw_tot_nd": tot_nd,
+                    "_raw_q_nd": len(df_nd[df_nd["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
+                    "_raw_tot_gpon": tot_gpon,
+                    "_raw_q_gpon": len(df_gpon[df_gpon["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
+                    "_raw_tot_mig": tot_mig,
+                    "_raw_q_mig": len(df_mig[df_mig["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
+                    "_raw_tot_pme": tot_pme,
+                    "_raw_q_pme": len(df_pme[df_pme["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
                 }
 
             linhas_gerenciais = []
@@ -706,13 +725,10 @@ if uploaded_aniel is not None:
                 inp = inputs_base[base]
                 res_base = calcular_resumo_grupo(df_b, inp["montados"], inp["hoje_cons"])
                 
-                # --- APLICAÇÃO EXATA DA FÓRMULA DE PROJEÇÃO: =G3*27 ---
-                # Se G3 foi digitado na barra lateral, usa o valor; caso contrário, usa o Proj. Dia calculado
+                # Projeção = G3 * 27 (sem a coluna Media G3 exibida)
                 media_g3 = inp["media_os_mes"] if inp["media_os_mes"] > 0 else res_base["_raw_proj_dia"]
-                proj_os_mes = round(media_g3 * dias_uteis_mes)
-                
-                # Projeção Consultivo
-                proj_cons = round((inp["hoje_cons"] / dias_trabalhados) * dias_uteis_mes) if dias_trabalhados > 0 else 0
+                proj_os_mes = int(round(media_g3 * dias_uteis_mes))
+                proj_cons = int(round((inp["hoje_cons"] / dias_trabalhados) * dias_uteis_mes)) if dias_trabalhados > 0 else 0
 
                 linhas_gerenciais.append({
                     "Base": base,
@@ -720,7 +736,6 @@ if uploaded_aniel is not None:
                     "Parados": inp["parados"],
                     "Montados": inp["montados"],
                     "Meta O.S.": inp["meta_os"],
-                    "Média G3": round(media_g3, 1),
                     "Proj. O.S.": proj_os_mes,
                     "Meta Consult": inp["meta_cons"],
                     "Proj. Consult": proj_cons,
@@ -734,86 +749,234 @@ if uploaded_aniel is not None:
                     df_s = df_b[df_b["Supervisor"] == sup]
                     m_sup = round(inp["montados"] / len(supervisores)) if len(supervisores) > 0 else 1
                     res_sup = calcular_resumo_grupo(df_s, m_sup, 0)
-                    
-                    # Projeção individual do supervisor baseada no seu Proj. Dia
-                    proj_sup_mes = round(res_sup["_raw_proj_dia"] * dias_uteis_mes)
+                    proj_sup_mes = int(round(res_sup["_raw_proj_dia"] * dias_uteis_mes))
                     
                     linhas_gerenciais.append({
                         "Base": base,
                         "Supervisor": sup,
-                        "Parados": "",
+                        "Parados": 0,
                         "Montados": m_sup,
-                        "Meta O.S.": "",
-                        "Média G3": round(res_sup["_raw_proj_dia"], 1),
+                        "Meta O.S.": 0,
                         "Proj. O.S.": proj_sup_mes,
-                        "Meta Consult": "",
-                        "Proj. Consult": "",
-                        "Hoje Consult": "",
-                        "Ganho O.S.": "",
+                        "Meta Consult": 0,
+                        "Proj. Consult": 0,
+                        "Hoje Consult": 0,
+                        "Ganho O.S.": 0,
                         **res_sup
                     })
 
-            df_painel = pd.DataFrame(linhas_gerenciais)
+            # --- LINHA CONSOLIDADA GERAL: TOTAL INSTALAÇÃO ---
+            tot_parados_global = sum(inputs_base[b]["parados"] for b in bases_padrao)
+            tot_montados_global = sum(inputs_base[b]["montados"] for b in bases_padrao)
+            tot_meta_os_global = sum(inputs_base[b]["meta_os"] for b in bases_padrao)
+            tot_proj_os_global = sum(i["Proj. O.S."] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            tot_meta_cons_global = sum(inputs_base[b]["meta_cons"] for b in bases_padrao)
+            tot_proj_cons_global = sum(i["Proj. Consult"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            tot_hoje_cons_global = sum(inputs_base[b]["hoje_cons"] for b in bases_padrao)
+            tot_ganho_os_global = sum(inputs_base[b]["ganho_os"] for b in bases_padrao)
 
-            # --- VISÃO CONSOLIDADA TOTAL INSTALAÇÃO ---
-            st.markdown("### 📌 Visão Consolidada Geral (Total Instalação)")
-            tot_prod_global = sum(i["_raw_produtivo"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
             tot_os_global = sum(i["_raw_tot_os"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
             tot_aberta_global = sum(i["_raw_os_aberta"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            tot_prod_global = sum(i["_raw_produtivo"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
             tot_quebra_global = sum(i["_raw_quebra_geral"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
             tot_pontos_global = sum(i["_raw_pontos"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
-            tot_montados_global = sum(inputs_base[b]["montados"] for b in bases_padrao)
-            tot_proj_os_global = sum(i["Proj. O.S."] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            tot_proj_dia_global = sum(i["_raw_proj_dia"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            tot_sem_consult_global = sum(i["O.S Sem Consult"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            tot_canc_global = sum(i["O.S. Canc."] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            tot_saiu_toa_global = sum(i["Saiu TOA"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
 
-            den_global = tot_quebra_global + tot_prod_global
-            pct_quebra_global = (tot_quebra_global / den_global) if den_global > 0 else 0.0
-            efic_global = max(0.0, 1.0 - pct_quebra_global)
-            media_global = (tot_prod_global / tot_montados_global) if tot_montados_global > 0 else 0.0
+            # Totais tecnológicos
+            tot_nd_global = sum(i["ND"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            tot_gpon_global = sum(i["Total GPON"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            tot_mig_global = sum(i["Total MIG"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            tot_mig_canc_global = sum(i["Canc. MIG"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            tot_retorno_wo_global = sum(i["Retorno WO"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            tot_pme_global = sum(i["Total PME"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            tot_pme_canc_global = sum(i["Canc. PME"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
 
+            # Percentuais Globais recalculados por fórmula
+            den_geral_global = tot_quebra_global + tot_prod_global
+            pct_quebra_global = (tot_quebra_global / den_geral_global) if den_geral_global > 0 else 0.0
+            efic_global = max(0.0, 1.0 - pct_quebra_global) * 100
+            media_os_global = (tot_prod_global / tot_montados_global) if tot_montados_global > 0 else 0.0
+
+            raw_ins_tot = sum(i["_raw_tot_ins"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            raw_ins_q = sum(i["_raw_q_ins"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            quebra_ins_global = (raw_ins_q / raw_ins_tot * 100) if raw_ins_tot > 0 else 0.0
+
+            raw_serv_tot = sum(i["_raw_tot_serv"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            raw_serv_q = sum(i["_raw_q_serv"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            quebra_serv_global = (raw_serv_q / raw_serv_tot * 100) if raw_serv_tot > 0 else 0.0
+
+            raw_nd_q = sum(i["_raw_q_nd"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            quebra_nd_global = (raw_nd_q / tot_nd_global * 100) if tot_nd_global > 0 else 0.0
+
+            raw_gpon_q = sum(i["_raw_q_gpon"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            quebra_gpon_global = (raw_gpon_q / tot_gpon_global * 100) if tot_gpon_global > 0 else 0.0
+
+            raw_mig_q = sum(i["_raw_q_mig"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            quebra_mig_global = (raw_mig_q / tot_mig_global * 100) if tot_mig_global > 0 else 0.0
+
+            raw_pme_q = sum(i["_raw_q_pme"] for i in linhas_gerenciais if i["Supervisor"] == "CONSOLIDADO")
+            quebra_pme_global = (raw_pme_q / tot_pme_global * 100) if tot_pme_global > 0 else 0.0
+
+            linha_total_instalacao = {
+                "Base": "TOTAL INSTALAÇÃO",
+                "Supervisor": "TOTAL GERAL",
+                "Parados": tot_parados_global,
+                "Montados": tot_montados_global,
+                "Meta O.S.": tot_meta_os_global,
+                "Proj. O.S.": tot_proj_os_global,
+                "Meta Consult": tot_meta_cons_global,
+                "Proj. Consult": tot_proj_cons_global,
+                "Hoje Consult": tot_hoje_cons_global,
+                "Ganho O.S.": tot_ganho_os_global,
+                "TOTAL O.S.": tot_os_global,
+                "O.S. ABERTA": tot_aberta_global,
+                "Pontos": int(round(tot_pontos_global, 0)),
+                "Efic. (%)": round(efic_global, 1),
+                "Média O.S.": round(media_os_global, 1),
+                "O.S. Exec.": tot_prod_global,
+                "Proj. Dia": round(tot_proj_dia_global, 1),
+                "O.S Sem Consult": tot_sem_consult_global,
+                "Quebra INS (%)": round(quebra_ins_global, 1),
+                "Quebra SERV (%)": round(quebra_serv_global, 1),
+                "ND": tot_nd_global,
+                "Quebra ND (%)": round(quebra_nd_global, 1),
+                "O.S. Canc.": tot_canc_global,
+                "Saiu TOA": tot_saiu_toa_global,
+                "Total GPON": tot_gpon_global,
+                "Quebra GPON": round(quebra_gpon_global, 1),
+                "Total MIG": tot_mig_global,
+                "Quebra MIG": round(quebra_mig_global, 1),
+                "Canc. MIG": tot_mig_canc_global,
+                "Retorno WO": tot_retorno_wo_global,
+                "Total PME": tot_pme_global,
+                "Quebra PME": round(quebra_pme_global, 1),
+                "Canc. PME": tot_pme_canc_global
+            }
+
+            df_painel_todos = pd.DataFrame(linhas_gerenciais)
+
+            # --- CARDS DE DESTAQUE EXECUTIVO ---
+            st.markdown("### 📌 Visão Consolidada Geral (Total Instalação)")
             c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("Total O.S.", f"{tot_os_global:,}".replace(",", "."))
             c2.metric("O.S. Executadas", f"{tot_prod_global:,}".replace(",", "."))
             c3.metric(f"Projeção Mês ({dias_uteis_mes} d.u.)", f"{tot_proj_os_global:,}".replace(",", "."))
-            c4.metric("Efic. Global", f"{efic_global * 100:.1f}%")
-            c5.metric("Média O.S. / Téc", f"{media_global:.1f}")
+            c4.metric("Efic. Global", f"{efic_global:.1f}%")
+            c5.metric("Média O.S. / Téc", f"{media_os_global:.1f}")
             c6.metric("Técnicos Montados", tot_montados_global)
 
             st.markdown("---")
 
-            # --- TABELA EXECUTIVA POR BASE (DIRETORIA) ---
+            # --- TABELA 1: RESUMO POR BASE (COM TOTAL NO FINAL) ---
             st.markdown("### 🏢 Resumo Consolidado por Base Operacional")
-            cols_base_apres = [
-                "Base", "Parados", "Montados", "Meta O.S.", "Média G3", "Proj. O.S.", "Meta Consult", "Proj. Consult", "Hoje Consult",
+            cols_base = [
+                "Base", "Parados", "Montados", "Meta O.S.", "Proj. O.S.", "Meta Consult", "Proj. Consult", "Hoje Consult",
                 "TOTAL O.S.", "O.S. ABERTA", "Pontos", "Efic. (%)", "Média O.S.", "O.S. Exec.", "Proj. Dia", "O.S Sem Consult",
                 "Quebra INS (%)", "Quebra SERV (%)", "Quebra ND (%)", "O.S. Canc.", "Saiu TOA", "Ganho O.S.",
                 "Total GPON", "Quebra GPON", "Total MIG", "Quebra MIG", "Total PME", "Quebra PME"
             ]
-            df_apres_base = df_painel[df_painel["Supervisor"] == "CONSOLIDADO"][cols_base_apres].reset_index(drop=True)
-            st.dataframe(df_apres_base, use_container_width=True)
 
-            # --- DETALHAMENTO DINÂMICO POR SUPERVISOR ---
+            df_base_display = df_painel_todos[df_painel_todos["Supervisor"] == "CONSOLIDADO"][cols_base].copy()
+            # Adiciona a linha de TOTAL INSTALAÇÃO no final
+            df_base_display.loc[len(df_base_display)] = [linha_total_instalacao[c] for c in cols_base]
+
+            # Função de Estilização Profissional com Cores e Destaques
+            def colorir_tabela_executiva(df):
+                styles = pd.DataFrame("", index=df.index, columns=df.columns)
+                for idx, row in df.iterrows():
+                    is_total = (row["Base"] == "TOTAL INSTALAÇÃO")
+                    for col in df.columns:
+                        css = []
+                        if is_total:
+                            css.append("background-color: #263238; color: #ffffff; font-weight: bold; border-top: 2px solid #000000;")
+                        else:
+                            # Cores por blocos temáticos
+                            if col in ["Montados", "O.S. Exec.", "Proj. Dia", "Proj. O.S."]:
+                                css.append("background-color: #e8f5e9; font-weight: 500;") # Verde suave (produtivo)
+                            elif col in ["Efic. (%)"]:
+                                css.append("background-color: #c8e6c9; font-weight: bold;") # Verde destaque
+                            elif "Quebra" in col or col in ["O.S. Canc.", "Saiu TOA"]:
+                                css.append("background-color: #fff3e0;") # Laranja suave (quebras)
+                            elif col in ["Total GPON", "Total MIG", "Total PME"]:
+                                css.append("background-color: #e1f5fe;") # Azul suave (tecnologias)
+                        styles.at[idx, col] = "; ".join(css)
+                return styles
+
+            # Formatações elegantes de percentual e inteiros
+            format_dict = {
+                "Parados": "{:,.0f}",
+                "Montados": "{:,.0f}",
+                "Meta O.S.": "{:,.0f}",
+                "Proj. O.S.": "{:,.0f}",
+                "Meta Consult": "{:,.0f}",
+                "Proj. Consult": "{:,.0f}",
+                "Hoje Consult": "{:,.0f}",
+                "TOTAL O.S.": "{:,.0f}",
+                "O.S. ABERTA": "{:,.0f}",
+                "Pontos": "{:,.0f}",
+                "Efic. (%)": "{:.1f}%",
+                "Média O.S.": "{:.1f}",
+                "O.S. Exec.": "{:,.0f}",
+                "Proj. Dia": "{:.1f}",
+                "O.S Sem Consult": "{:,.0f}",
+                "Quebra INS (%)": "{:.1f}%",
+                "Quebra SERV (%)": "{:.1f}%",
+                "Quebra ND (%)": "{:.1f}%",
+                "O.S. Canc.": "{:,.0f}",
+                "Saiu TOA": "{:,.0f}",
+                "Ganho O.S.": "{:,.0f}",
+                "Total GPON": "{:,.0f}",
+                "Quebra GPON": "{:.1f}%",
+                "Total MIG": "{:,.0f}",
+                "Quebra MIG": "{:.1f}%",
+                "Total PME": "{:,.0f}",
+                "Quebra PME": "{:.1f}%"
+            }
+
+            st.dataframe(
+                df_base_display.style.apply(colorir_tabela_executiva, axis=None).format(format_dict, na_rep=""),
+                use_container_width=True
+            )
+
+            # --- TABELA 2: DETALHAMENTO POR SUPERVISOR ---
+            st.markdown("---")
             st.markdown("### 👥 Detalhamento Completo por Base e Supervisor")
-            base_selecionada = st.selectbox("Selecione a Base para Detalhar:", ["TODAS"] + bases_padrao)
-            
-            cols_sup_apres = [
+            base_selecionada = st.selectbox("Filtrar Exibição de Supervisores:", ["TODAS"] + bases_padrao)
+
+            cols_sup = [
                 "Base", "Supervisor", "Montados", "TOTAL O.S.", "O.S. ABERTA", "Pontos", "Efic. (%)",
                 "Média O.S.", "O.S. Exec.", "Proj. Dia", "Proj. O.S.", "Quebra INS (%)", "Quebra SERV (%)", "Quebra ND (%)",
                 "O.S. Canc.", "Saiu TOA", "Total GPON", "Total MIG", "Total PME", "Quebra PME"
             ]
-            
-            if base_selecionada == "TODAS":
-                st.dataframe(df_painel[cols_sup_apres].reset_index(drop=True), use_container_width=True)
-            else:
-                st.dataframe(df_painel[df_painel["Base"] == base_selecionada][cols_sup_apres].reset_index(drop=True), use_container_width=True)
 
-            # --- EXPORTAÇÃO EXCEL COM DUAS ABAS ---
+            if base_selecionada == "TODAS":
+                df_sup_display = df_painel_todos[cols_sup].copy()
+            else:
+                df_sup_display = df_painel_todos[df_painel_todos["Base"] == base_selecionada][cols_sup].copy()
+
+            # Adiciona a linha de total ao final da visualização de supervisores
+            df_sup_display.loc[len(df_sup_display)] = [linha_total_instalacao[c] for c in cols_sup]
+
+            st.dataframe(
+                df_sup_display.style.apply(colorir_tabela_executiva, axis=None).format(format_dict, na_rep=""),
+                use_container_width=True
+            )
+
+            # --- EXPORTAÇÃO EXCEL COMPLETA ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                df_painel.to_excel(writer, sheet_name="RESUMO_DIRETORIA", index=False)
+                # Aba 1: Resumo Formatado da Apresentação
+                df_base_display.to_excel(writer, sheet_name="RESUMO_DIRETORIA", index=False)
+                # Aba 2: Detalhamento por Supervisor
+                df_sup_display.to_excel(writer, sheet_name="DETALHE_SUPERVISORES", index=False)
+                # Aba 3: Base ANIEL Tratada
                 df_aniel.to_excel(writer, sheet_name="BASE_TRATADA", index=False)
-            
+
             st.download_button(
-                label="📥 Baixar Apresentação e Planilha Consolidada (.xlsx)",
+                label="📥 Baixar Apresentação e Planilha Formatada (.xlsx)",
                 data=output.getvalue(),
                 file_name="Apresentacao_Resultados_Diretoria.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
