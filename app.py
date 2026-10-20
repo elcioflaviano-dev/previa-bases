@@ -11,12 +11,12 @@ st.set_page_config(
 
 st.title("📊 Painel Operacional - Tratamento da Base Aniel")
 st.write(
-    "Carregue a base Aniel e os ficheiros do TOA. As tabelas de Baixas, Pontos"
-    " e Descrição de OS já estão integradas no sistema!"
+    "Carregue a base Aniel e os arquivos do TOA para gerar a estrutura exata de"
+    " colunas operacionais."
 )
 
 
-# --- FUNÇÃO BLINDADA PARA LEITURA DE FICHEIROS ---
+# --- FUNÇÃO DE LEITURA SEGURO ---
 def ler_arquivo_seguro(uploaded_file):
   uploaded_file.seek(0)
   nome = uploaded_file.name.lower()
@@ -30,21 +30,18 @@ def ler_arquivo_seguro(uploaded_file):
           uploaded_file, sep=";", encoding="latin1", on_bad_lines="skip"
       )
 
-  # Tenta ler como Excel moderno forçando openpyxl
   try:
     uploaded_file.seek(0)
     return pd.read_excel(uploaded_file, engine="openpyxl")
   except Exception:
     pass
 
-  # Fallback 1: Tenta ler sem especificar engine ou com xlrd (Excel antigo)
   try:
     uploaded_file.seek(0)
     return pd.read_excel(uploaded_file)
   except Exception:
     pass
 
-  # Fallback 2: Ficheiros exportados de sistemas que têm extensão .xlsx mas são CSV/Texto
   try:
     uploaded_file.seek(0)
     return pd.read_csv(uploaded_file, sep=None, engine="python", encoding="utf-8")
@@ -57,20 +54,16 @@ def ler_arquivo_seguro(uploaded_file):
   except Exception:
     pass
 
-  # Fallback 3: Ficheiros exportados como tabela HTML com extensão .xlsx
   try:
     uploaded_file.seek(0)
     dfs = pd.read_html(uploaded_file)
     if dfs:
       return dfs[0]
   except Exception as e:
-    raise ValueError(
-        f"Não foi possível ler o ficheiro '{uploaded_file.name}'. Detalhe"
-        f" técnico: {e}"
-    )
+    raise ValueError(f"Não foi possível ler o arquivo: {e}")
 
 
-# Dicionários de referência integrados diretamente no código (PROCV automático)
+# Dicionários de referência integrados (PROCV automático)
 BAIXAS_DICT = {
     "100 - AGENDAMENTO NAO CUMPRIDO": "IMPRODUTIVA",
     "101 - ENDERECO NAO LOCALIZADO": "IMPRODUTIVA",
@@ -388,7 +381,7 @@ DESC_OS_DICT = {
     "VISITA TECNICA NOW": "SERVIÇOS",
 }
 
-# Uploaders na Interface
+# Uploaders
 uploaded_aniel = st.file_uploader(
     "Carregar Ficheiro ANIEL (.xlsx ou .xlsm)",
     type=["xlsx", "xlsm", "csv"],
@@ -403,16 +396,25 @@ uploaded_toa = st.file_uploader(
 
 if uploaded_aniel is not None:
   try:
-    with st.spinner("A processar os dados e aplicar regras..."):
+    with st.spinner("A processar os dados e estruturar o cabeçalho..."):
       df_aniel = ler_arquivo_seguro(uploaded_aniel)
 
-      # Unindo os ficheiros do TOA
+      # Padronizar nomes de colunas removendo espaços extras
+      df_aniel.columns = [str(c).strip() for c in df_aniel.columns]
+
+      # Garantir a criação das colunas do TOA se não existirem no arquivo
+      colunas_necessarias = ["ST1", "ST2", "ST3", "CANCELADAS", "PME"]
+      for col in colunas_necessarias:
+        if col not in df_aniel.columns:
+          df_aniel[col] = ""
+
+      # Unindo os arquivos do TOA
       df_toa = None
       if uploaded_toa:
         toa_dfs = [ler_arquivo_seguro(file) for file in uploaded_toa]
         df_toa = pd.concat(toa_dfs, ignore_index=True)
 
-      # 1. Cruzamento com o TOA (Removendo duplicados de Contrato na base TOA para evitar conflito)
+      # 1. Cruzamento com o TOA
       if df_toa is not None and not df_toa.empty:
         col_chave_toa = df_toa.columns[1]
         df_toa_clean = df_toa.copy()
@@ -433,19 +435,25 @@ if uploaded_aniel is not None:
           )
           if contrato in toa_dict:
             match = toa_dict[contrato]
-            df_aniel.at[idx, "ST1"] = match.get(df_toa.columns[2], "")
-            df_aniel.at[idx, "ST2"] = match.get(df_toa.columns[3], "")
-            df_aniel.at[idx, "ST3"] = match.get(df_toa.columns[7], "")
-            df_aniel.at[idx, "CANCELADAS"] = match.get(df_toa.columns[5], "")
-            df_aniel.at[idx, "PME"] = match.get(df_toa.columns[6], "")
+            df_aniel.at[idx, "ST1"] = str(
+                match.get(df_toa.columns[2], "")
+            ).replace("nan", "")
+            df_aniel.at[idx, "ST2"] = str(
+                match.get(df_toa.columns[3], "")
+            ).replace("nan", "")
+            df_aniel.at[idx, "ST3"] = str(
+                match.get(df_toa.columns[7], "")
+            ).replace("nan", "")
+            df_aniel.at[idx, "PME"] = str(
+                match.get(df_toa.columns[6], "")
+            ).replace("nan", "")
           else:
             df_aniel.at[idx, "ST1"] = ""
             df_aniel.at[idx, "ST2"] = ""
             df_aniel.at[idx, "ST3"] = ""
-            df_aniel.at[idx, "CANCELADAS"] = ""
             df_aniel.at[idx, "PME"] = ""
 
-      # 2 a 7. Aplicação das Regras Linha a Linha no Aniel
+      # 2. Tratamentos de Regras de Negócio
       baixas_upper = {k.upper(): v for k, v in BAIXAS_DICT.items()}
       desc_upper = {k.upper(): v for k, v in DESC_OS_DICT.items()}
       pontos_upper = {k.upper(): v for k, v in PONTOS_DICT.items()}
@@ -465,7 +473,7 @@ if uploaded_aniel is not None:
         st3_raw = str(row.get("ST3", "")).strip()
         st3_val = "" if st3_raw.lower() == "nan" else st3_raw.upper()
 
-        # Regra 2: Tratamento "N/A" ou vazio em Tipo de OS -> PROCV ST3 na tabela Baixas
+        # N/A -> Baixas
         if tipo_os in ["N/A", "#N/A", ""]:
           encontrou = False
           if st3_val != "":
@@ -481,30 +489,30 @@ if uploaded_aniel is not None:
           if not encontrou:
             tipo_os = "EM ABERTO"
 
-        # Regra 3: "EM ABERTO" com ST1 vazio -> "SAIU DO TOA"
+        # EM ABERTO com ST1 vazio -> SAIU DO TOA
         if tipo_os == "EM ABERTO" and st1_val == "":
           tipo_os = "SAIU DO TOA"
 
-        # Regra 4: ST2 Liberado/Cancelado NETSMS com "EM ABERTO" -> "CANCELADO"
+        # ST2 Liberado/Cancelado NETSMS com EM ABERTO -> CANCELADO
         if (
             "liberado no sistema netsms" in st2_val
             or "cancelado no sistema netsms" in st2_val
         ) and tipo_os == "EM ABERTO":
           tipo_os = "CANCELADO"
 
-        # Regra 5: ST2 Executado NETSMS -> "PRODUTIVA"
+        # ST2 Executado NETSMS -> PRODUTIVA
         if "executado no sistema netsms" in st2_val:
           tipo_os = "PRODUTIVA"
 
         df_aniel.at[idx, "Tipo de OS"] = tipo_os
 
-        # Regra 6: Coluna CANCELADAS baseada no ST2
+        # Regra CANCELADAS
         if "cancelado" in st2_val:
           df_aniel.at[idx, "CANCELADAS"] = "CANCELADO"
         else:
           df_aniel.at[idx, "CANCELADAS"] = ""
 
-        # Regra 7: QUEBRAS, ATIVIDADES e PONTOS PREV.
+        # QUEBRAS e ATIVIDADES
         tipo_servico_raw = str(row.get("Tipo de Serviço", "")).strip()
         tipo_servico = (
             ""
@@ -576,24 +584,40 @@ if uploaded_aniel is not None:
         except Exception:
           pass
 
-      # Reposicionar QUEBRAS e ATIVIDADES logo após "Observação 1" se existir
-      cols = list(df_aniel.columns)
-      if (
-          "Observação 1" in cols
-          and "QUEBRAS" in cols
-          and "ATIVIDADES" in cols
-      ):
-        cols.remove("QUEBRAS")
-        cols.remove("ATIVIDADES")
-        idx_obs = cols.index("Observação 1")
-        cols.insert(idx_obs + 1, "QUEBRAS")
-        cols.insert(idx_obs + 2, "ATIVIDADES")
-        df_aniel = df_aniel[cols]
+      # --- ESTRUTURAÇÃO E ORDENAÇÃO EXATA DO CABEÇALHO ---
+      ordem_desejada = [
+          "Data Agendamento",
+          "Projeto",
+          "Cidade",
+          "Contrato Cliente",
+          "Tipo de OS",
+          "ST1",
+          "ST2",
+          "ST3",
+          "CANCELADAS",
+          "PME",
+          "Supervisor",
+          "Pontos Prev.",
+          "Tipo de Serviço",
+          "Observação 1",
+          "QUEBRAS",
+          "ATIVIDADES",
+      ]
 
-      st.success("Processamento concluído com sucesso!")
-      st.dataframe(df_aniel.head(20))
+      # Garante que todas as colunas existem
+      for col in ordem_desejada:
+        if col not in df_aniel.columns:
+          df_aniel[col] = ""
 
-      # Exportar para Excel (ou CSV de segurança se openpyxl não estiver no ambiente)
+      # Adiciona quaisquer outras colunas extras do arquivo original que não estavam na lista ao final
+      outras_colunas = [c for c in df_aniel.columns if c not in ordem_desejada]
+      colunas_finais = ordem_desejada + outras_colunas
+
+      df_aniel = df_aniel[colunas_finais]
+
+      st.success("Processamento concluído! Cabeçalho e colunas ordenados:")
+      st.dataframe(df_aniel.head(25))
+
       output = io.BytesIO()
       try:
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
