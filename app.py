@@ -134,11 +134,6 @@ bases_config = [
     {"label": "Leste", "projeto": "NET-LESTE"}
 ]
 
-for item in bases_config:
-    proj = item["projeto"]
-    if f"exp_{proj}" not in st.session_state:
-        st.session_state[f"exp_{proj}"] = False
-
 def ir_para_passo_2():
     st.session_state["pagina_atual"] = "2. Dados Operacionais por Base"
 
@@ -801,7 +796,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         )
 
 # ==============================================================================
-# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (DIRETORIA COM BOTÕES +/- AO LADO DA BASE)
+# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (BLOCOS SEPARADOS POR BASE)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
@@ -982,7 +977,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "os_consult": os_consult_b, "ganho": ganho_b, "label": b_label
             }
 
-        # --- CONSTRUÇÃO DA TABELA COM OS BOTÕES +/- DIRETAMENTE AO LADO DA BASE ---
+        # --- TABELA PRINCIPAL CONSOLIDADA DA DIRETORIA ---
         tabela_html = [gerar_cabecalho_html()]
 
         for item in bases_config:
@@ -991,16 +986,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             m = metricas_bases[b_proj]
             res = m["res"]
             
-            # Linha da Base com botão compacto alinhado à esquerda
-            col_lbl, col_btn = st.columns([0.8, 0.2])
-            with col_lbl:
-                st.markdown(f"**Base: {b_label}**")
-            with col_btn:
-                simbolo = "➖" if st.session_state[f"exp_{b_proj}"] else "➕"
-                if st.button(f"{simbolo} Supervisores", key=f"btn_{b_proj}"):
-                    st.session_state[f"exp_{b_proj}"] = not st.session_state[f"exp_{b_proj}"]
-                    st.rerun()
-
             tabela_html.append(
                 f'<tr class="tr-base">'
                 f'<td style="text-align: left; padding-left: 8px;">{b_label}</td>'
@@ -1037,42 +1022,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 f'<td>{res["canc_pme"]}</td>'
                 f'</tr>'
             )
-
-            # Se o botão estiver ativado para esta base, insere os supervisores logo abaixo
-            if st.session_state[f"exp_{b_proj}"]:
-                sups_b = st.session_state.supervisores_por_base.get(b_proj, [])
-                for s in sups_b:
-                    df_s = df_valido[(df_valido["Projeto"].str.upper() == b_proj.upper()) & (df_valido["Supervisor"] == s)]
-                    p_sup = st.session_state.get(f"p_{b_proj}_{s}", 0)
-                    m_sup = st.session_state.get(f"m_{b_proj}_{s}", 20)
-                    res_s = calcular_metricas(df_s, m_sup, 0)
-                    primeiro_nome = s.split()[0]
-                    
-                    tabela_html.append(
-                        f'<tr class="tr-sup">'
-                        f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
-                        f'<td>{p_sup}</td>'
-                        f'<td class="col-destaque-amarelo">{m_sup}</td>'
-                        f'<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>'
-                        f'<td>{res_s["tot_os"]}</td>'
-                        f'<td>{res_s["os_aberta"]}</td>'
-                        f'<td>{res_s["pontos"]}</td>'
-                        f'<td>{res_s["efic"]:.1f}%</td>'
-                        f'<td class="col-destaque-azul">{res_s["media_os"]:.1f}</td>'
-                        f'<td>{res_s["produtivo"]}</td>'
-                        f'<td>-</td>'
-                        f'<td>{res_s["q_ins"]:.1f}%</td>'
-                        f'<td>{res_s["q_serv"]:.1f}%</td>'
-                        f'<td>{res_s["q_nd"]:.1f}%</td>'
-                        f'<td>-</td>'
-                        f'<td>{res_s["os_canc"]}</td>'
-                        f'<td>{res_s["saiu_toa"]}</td>'
-                        f'<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>'
-                        f'<td>{res_s["tot_pme"]}</td>'
-                        f'<td>{res_s["q_pme"]:.1f}%</td>'
-                        f'<td>{res_s["canc_pme"]}</td>'
-                        f'</tr>'
-                    )
 
         g_den_geral = g_quebra + g_prod
         g_efic = (max(0.0, 1.0 - (g_quebra / g_den_geral)) * 100) if g_den_geral > 0 else 0.0
@@ -1124,7 +1073,55 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         )
 
         st.markdown("".join(tabela_html), unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<br><hr><br>", unsafe_allow_html=True)
+
+        # --- BLOCOS SEPARADOS POR BASE PARA OS SUPERVISORES (SEM TRAÇOS, CÉLULAS VAZIAS LIMPAS) ---
+        st.markdown("### 🏢 Detalhamento por Supervisores (Separado por Blocos de Base)")
+
+        for item in bases_config:
+            b_label = item["label"]
+            b_proj = item["projeto"]
+            
+            with st.expander(f"📂 Expandir Detalhamento da Base: {b_label}"):
+                df_b = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()]
+                sups_b = st.session_state.supervisores_por_base.get(b_proj, [])
+                
+                tabela_sup_html = [gerar_cabecalho_html()]
+                for s in sups_b:
+                    df_s = df_b[df_b["Supervisor"] == s]
+                    p_sup = st.session_state.get(f"p_{b_proj}_{s}", 0)
+                    m_sup = st.session_state.get(f"m_{b_proj}_{s}", 20)
+                    res_s = calcular_metricas(df_s, m_sup, 0)
+                    primeiro_nome = s.split()[0]
+                    
+                    tabela_sup_html.append(
+                        f'<tr class="tr-sup">'
+                        f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
+                        f'<td>{p_sup}</td>'
+                        f'<td class="col-destaque-amarelo">{m_sup}</td>'
+                        f'<td></td><td></td><td></td><td></td><td></td><td></td>'
+                        f'<td>{res_s["tot_os"]}</td>'
+                        f'<td>{res_s["os_aberta"]}</td>'
+                        f'<td>{res_s["pontos"]}</td>'
+                        f'<td>{res_s["efic"]:.1f}%</td>'
+                        f'<td class="col-destaque-azul">{res_s["media_os"]:.1f}</td>'
+                        f'<td>{res_s["produtivo"]}</td>'
+                        f'<td></td>'
+                        f'<td>{res_s["q_ins"]:.1f}%</td>'
+                        f'<td>{res_s["q_serv"]:.1f}%</td>'
+                        f'<td>{res_s["q_nd"]:.1f}%</td>'
+                        f'<td></td>'
+                        f'<td>{res_s["os_canc"]}</td>'
+                        f'<td>{res_s["saiu_toa"]}</td>'
+                        f'<td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
+                        f'<td>{res_s["tot_pme"]}</td>'
+                        f'<td>{res_s["q_pme"]:.1f}%</td>'
+                        f'<td>{res_s["canc_pme"]}</td>'
+                        f'</tr>'
+                    )
+                tabela_sup_html.append('</tbody></table>')
+                st.markdown("".join(tabela_sup_html), unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
 
         if st.session_state.df_aniel_full is not None:
             output = io.BytesIO()
