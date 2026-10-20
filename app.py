@@ -11,8 +11,8 @@ st.set_page_config(
 
 st.title("📊 Painel Operacional - Tratamento da Base Aniel")
 st.write(
-    "Carregue a base Aniel e os arquivos do TOA para gerar a estrutura exata de"
-    " colunas operacionais."
+    "Carregue a base Aniel e os arquivos do TOA para gerar a estrutura exata das"
+    " 16 colunas operacionais."
 )
 
 
@@ -584,8 +584,8 @@ if uploaded_aniel is not None:
         except Exception:
           pass
 
-      # --- ESTRUTURAÇÃO E ORDENAÇÃO EXATA DO CABEÇALHO ---
-      ordem_desejada = [
+      # --- MANTER RIGOROSAMENTE APENAS AS 16 COLUNAS ENVIADAS ---
+      colunas_finais = [
           "Data Agendamento",
           "Projeto",
           "Cidade",
@@ -604,18 +604,18 @@ if uploaded_aniel is not None:
           "ATIVIDADES",
       ]
 
-      # Garante que todas as colunas existem
-      for col in ordem_desejada:
+      # Garante que as colunas existam se faltarem na base original
+      for col in colunas_finais:
         if col not in df_aniel.columns:
           df_aniel[col] = ""
 
-      # Adiciona quaisquer outras colunas extras do arquivo original que não estavam na lista ao final
-      outras_colunas = [c for c in df_aniel.columns if c not in ordem_desejada]
-      colunas_finais = ordem_desejada + outras_colunas
-
+      # Filtra estritamente apenas as colunas desejadas, excluindo todo o resto
       df_aniel = df_aniel[colunas_finais]
 
-      st.success("Processamento concluído! Cabeçalho e colunas ordenados:")
+      st.success(
+          "Processamento concluído com sucesso! Apenas as 16 colunas finais"
+          " mantidas:"
+      )
       st.dataframe(df_aniel.head(25))
 
       output = io.BytesIO()
