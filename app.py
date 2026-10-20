@@ -510,7 +510,7 @@ DESC_OS_DICT = {
     "VISITA TECNICA NOW": "SERVIÇOS",
 }
 
-bases_padrao = ["NET-ABCDM", "NET-Guarulhos", "NET-LESTE"]
+bases_padrao = ["ABCDM", "Guarulhos", "LESTE"]
 
 # ==============================================================================
 # PÁGINA 1: UPLOAD DE ARQUIVOS
@@ -742,18 +742,18 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         st.session_state["data_formatada"] = data_formatada
 
         defaults = {
-            "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "meta_cons": 552, "hoje_cons": 12, "ganho_os": 27,
+            "ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "meta_cons": 552, "hoje_cons": 12, "ganho_os": 27,
                           "sup_parados": {"EDSON MARCO PINHEIRO": 3, "MAICON APARECIDO FARIA": 1, "NELSON ALVES OLIVEIRA JUNIOR": 0},
                           "sup_montados": {"EDSON MARCO PINHEIRO": 23, "MAICON APARECIDO FARIA": 22, "NELSON ALVES OLIVEIRA JUNIOR": 23}},
-            "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "meta_cons": 608, "hoje_cons": 19, "ganho_os": 40,
+            "Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "meta_cons": 608, "hoje_cons": 19, "ganho_os": 40,
                               "sup_parados": {"ADRIANO NASCIMENTO DA SILVA": 0, "DANIELE BARBOSA DE OLIVEIRA": 3, "FERNANDO CESAR COELHO RAMOS": 2, "PALOMA REGINA SILVA BATISTA": 1},
                               "sup_montados": {"ADRIANO NASCIMENTO DA SILVA": 20, "DANIELE BARBOSA DE OLIVEIRA": 20, "FERNANDO CESAR COELHO RAMOS": 19, "PALOMA REGINA SILVA BATISTA": 19}},
-            "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "meta_cons": 656, "hoje_cons": 39, "ganho_os": 42,
+            "LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "meta_cons": 656, "hoje_cons": 39, "ganho_os": 42,
                           "sup_parados": {"ALAN DE ANDRADE DIAS": 2, "ELISANGELA CASSIMIRO GONCALVES": 0, "FRANCISCO GERALDO CARVALHO JUNIOR": 0, "JOAO CARLOS FERREIRA MIRON": 3},
                           "sup_montados": {"ALAN DE ANDRADE DIAS": 26, "ELISANGELA CASSIMIRO GONCALVES": 11, "FRANCISCO GERALDO CARVALHO JUNIOR": 26, "JOAO CARLOS FERREIRA MIRON": 17}}
         }
 
-        tabs = st.tabs(["NET-ABCDM", "NET-Guarulhos", "NET-LESTE"])
+        tabs = st.tabs(["ABCDM", "Guarulhos", "LESTE"])
         for i, b in enumerate(bases_padrao):
             with tabs[i]:
                 d = defaults.get(b, {})
@@ -809,9 +809,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         ]
 
         soma_hist_fallback = {
-            "NET-ABCDM": 5865,
-            "NET-Guarulhos": 6356,
-            "NET-LESTE": 6079
+            "ABCDM": 5865,
+            "Guarulhos": 6356,
+            "LESTE": 6079
         }
 
         def calcular_metricas(df_sub, montados, hoje_c):
@@ -930,12 +930,12 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
         for b in bases_padrao:
             df_b = df_valido[df_valido["Projeto"].str.upper() == b.upper()]
-            p_base = st.session_state.get(f"inp_par_{b}", 4 if b == "NET-ABCDM" else (6 if b == "NET-Guarulhos" else 5))
-            m_base = st.session_state.get(f"inp_mon_{b}", 68 if b == "NET-ABCDM" else (76 if b == "NET-Guarulhos" else 80))
-            meta_os_b = st.session_state.get(f"inp_meta_os_{b}", 11800 if b == "NET-ABCDM" else 12200)
-            meta_c_b = st.session_state.get(f"inp_meta_c_{b}", 552 if b == "NET-ABCDM" else (608 if b == "NET-Guarulhos" else 656))
-            hoje_c_b = st.session_state.get(f"inp_hoje_c_{b}", 12 if b == "NET-ABCDM" else (19 if b == "NET-Guarulhos" else 39))
-            ganho_b = st.session_state.get(f"inp_ganho_{b}", 27 if b == "NET-ABCDM" else (40 if b == "NET-Guarulhos" else 42))
+            p_base = st.session_state.get(f"inp_par_{b}", 4 if b == "ABCDM" else (6 if b == "Guarulhos" else 5))
+            m_base = st.session_state.get(f"inp_mon_{b}", 68 if b == "ABCDM" else (76 if b == "NGuarulhos" else 80))
+            meta_os_b = st.session_state.get(f"inp_meta_os_{b}", 11800 if b == "ABCDM" else 12200)
+            meta_c_b = st.session_state.get(f"inp_meta_c_{b}", 552 if b == "ABCDM" else (608 if b == "NGuarulhos" else 656))
+            hoje_c_b = st.session_state.get(f"inp_hoje_c_{b}", 12 if b == "ABCDM" else (19 if b == "NGuarulhos" else 39))
+            ganho_b = st.session_state.get(f"inp_ganho_{b}", 27 if b == "ABCDM" else (40 if b == "Guarulhos" else 42))
 
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
