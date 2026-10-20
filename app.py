@@ -800,7 +800,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 # PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (BLOCOS SEPARADOS POR BASE)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
-    st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
+    st.subheader("📊 Passo 3: Apresentação da Prévia Diária")
 
     if st.session_state.df_valido is None:
         st.warning("⚠️ Dados não encontrados. Complete os passos anteriores.")
@@ -978,7 +978,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "os_consult": os_consult_b, "ganho": ganho_b, "label": b_label
             }
 
-        # --- TABELA PRINCIPAL CONSOLIDADA DA DIRETORIA ---
+        # --- TABELA PRINCIPAL CONSOLIDADA ---
         tabela_html = [gerar_cabecalho_html()]
 
         for item in bases_config:
