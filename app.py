@@ -68,7 +68,7 @@ def calcular_calendario_automatico(ref_date=None):
     
     return dias_uteis_mes, max(1, dias_trab_ate_hoje), ref_date.strftime("%d/%m/%Y")
 
-# --- CONEXÃO E GERENCIAMENTO COM O GOOGLE SHEETS ---
+# --- CONEXÃO E GESTÃO COM O GOOGLE SHEETS ---
 @st.cache_resource
 def get_connection():
     try:
@@ -111,11 +111,11 @@ def obter_media_acumulada_sheets(base, os_exec_hoje, dias_trabalhados):
             return tot_exec / max(1, dias_trabalhados)
     return float(os_exec_hoje)
 
-# --- INICIALIZAÇÃO DE ESTADO ---
+# --- INICIALIZAÇÃO DE ESTADO E NAVEGAÇÃO ---
 etapas = ["1. Upload de Arquivos", "2. Dados Operacionais por Base", "3. Visualização da Prévia"]
 
-if "pagina" not in st.session_state:
-    st.session_state.pagina = "1. Upload de Arquivos"
+if "pagina_atual" not in st.session_state:
+    st.session_state["pagina_atual"] = "1. Upload de Arquivos"
 if "df_valido" not in st.session_state:
     st.session_state.df_valido = None
 if "df_aniel_full" not in st.session_state:
@@ -125,20 +125,17 @@ if "supervisores_por_base" not in st.session_state:
 if "processado_sucesso" not in st.session_state:
     st.session_state.processado_sucesso = False
 
-# Funções de Callback para navegação direta
-def navegar_para_dados():
-    st.session_state.pagina = "2. Dados Operacionais por Base"
+def ir_para_passo_2():
+    st.session_state["pagina_atual"] = "2. Dados Operacionais por Base"
 
-def navegar_para_previa():
-    st.session_state.pagina = "3. Visualização da Prévia"
+def ir_para_passo_3():
+    st.session_state["pagina_atual"] = "3. Visualização da Prévia"
 
-# Menu lateral sincronizado
 st.sidebar.title("Navegação")
-st.session_state.pagina = st.sidebar.radio(
+st.sidebar.radio(
     "Ir para:",
     etapas,
-    index=etapas.index(st.session_state.pagina),
-    key="nav_radio"
+    key="pagina_atual"
 )
 
 def ler_arquivo_seguro(uploaded_file):
@@ -515,15 +512,15 @@ bases_padrao = ["NET-ABCDM", "NET-Guarulhos", "NET-LESTE"]
 # ==============================================================================
 # PÁGINA 1: UPLOAD DE ARQUIVOS
 # ==============================================================================
-if st.session_state.pagina == "1. Upload de Arquivos":
+if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     st.subheader("📁 Passo 1: Upload e Cruzamento das Bases")
-    st.write("Carregue o arquivo do ANIEL e os arquivos do TOA para processar o dia.")
+    st.write("Carregue o ficheiro do ANIEL e os ficheiros do TOA para processar o dia.")
     
     col_u1, col_u2 = st.columns(2)
     with col_u1:
-        up_aniel = st.file_uploader("Arquivo ANIEL (.xlsx ou .xlsm)", type=["xlsx", "xlsm", "csv"], key="u_aniel")
+        up_aniel = st.file_uploader("Ficheiro ANIEL (.xlsx ou .xlsm)", type=["xlsx", "xlsm", "csv"], key="u_aniel")
     with col_u2:
-        up_toa = st.file_uploader("Arquivos do TOA (Pode selecionar os três)", type=["xlsx", "xlsm", "csv"], accept_multiple_files=True, key="u_toa")
+        up_toa = st.file_uploader("Ficheiros do TOA (Pode selecionar os três)", type=["xlsx", "xlsm", "csv"], accept_multiple_files=True, key="u_toa")
         
     if up_aniel is not None:
         if st.button("🚀 Processar Arquivos e Cruzar Bases", type="primary"):
@@ -532,7 +529,6 @@ if st.session_state.pagina == "1. Upload de Arquivos":
                     df_aniel = ler_arquivo_seguro(up_aniel)
                     df_aniel.columns = [str(c).strip() for c in df_aniel.columns]
 
-                    # Filtro Projeto VT
                     col_proj = next((c for c in df_aniel.columns if c.lower() == "projeto"), "Projeto")
                     if col_proj in df_aniel.columns:
                         df_aniel = df_aniel[
@@ -708,21 +704,19 @@ if st.session_state.pagina == "1. Upload de Arquivos":
                     st.session_state.processado_sucesso = False
                     st.error(f"Erro ao processar: {e}")
 
-    # Exibição do botão fora do if do processar (para não sumir ao clicar)
-    # Bloco corrigido:
     if st.session_state.processado_sucesso and st.session_state.df_valido is not None:
         st.success("✅ Arquivos carregados e tratados com sucesso!")
         st.button(
             "Ir para Dados Operacionais ➡️",
             type="primary",
-            on_click=navegar_para_dados,
+            on_click=ir_para_passo_2,
             key="btn_ir_dados"
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (CALENDÁRIO AUTOMÁTICO)
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS
 # ==============================================================================
-elif st.session_state.pagina == "2. Dados Operacionais por Base":
+elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
     
     if st.session_state.df_valido is None:
@@ -772,7 +766,7 @@ elif st.session_state.pagina == "2. Dados Operacionais por Base":
                 with c4:
                     st.number_input(f"Hoje Consultivo ({b})", value=d.get("hoje_cons", 0), key=f"inp_hoje_c_{b}")
                 
-                st.markdown("##### 👥 Equipe de Supervisores:")
+                st.markdown("##### 👥 Equipa de Supervisores:")
                 sups_base = st.session_state.supervisores_por_base.get(b, [])
                 col_s1, col_s2 = st.columns(2)
                 for sup in sups_base:
@@ -787,14 +781,14 @@ elif st.session_state.pagina == "2. Dados Operacionais por Base":
         st.button(
             "📊 Sincronizar Google Sheets e Gerar Prévia Executiva",
             type="primary",
-            on_click=navegar_para_previa,
+            on_click=ir_para_passo_3,
             key="btn_ir_previa"
         )
 
 # ==============================================================================
 # PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (DIRETORIA)
 # ==============================================================================
-elif st.session_state.pagina == "3. Visualização da Prévia":
+elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
 
     if st.session_state.df_valido is None:
@@ -923,12 +917,12 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
             df_b = df_valido[df_valido["Projeto"].str.upper() == b.upper()]
             sups_b = st.session_state.supervisores_por_base.get(b, [])
 
-            p_base = st.session_state.get(f"inp_par_{b}", 0)
-            m_base = st.session_state.get(f"inp_mon_{b}", 0)
-            meta_os_b = st.session_state.get(f"inp_meta_os_{b}", 0)
-            meta_c_b = st.session_state.get(f"inp_meta_c_{b}", 0)
-            hoje_c_b = st.session_state.get(f"inp_hoje_c_{b}", 0)
-            ganho_b = st.session_state.get(f"inp_ganho_{b}", 0)
+            p_base = st.session_state.get(f"inp_par_{b}", 4 if b == "NET-ABCDM" else (6 if b == "NET-Guarulhos" else 5))
+            m_base = st.session_state.get(f"inp_mon_{b}", 68 if b == "NET-ABCDM" else (76 if b == "NET-Guarulhos" else 80))
+            meta_os_b = st.session_state.get(f"inp_meta_os_{b}", 11800 if b == "NET-ABCDM" else 12200)
+            meta_c_b = st.session_state.get(f"inp_meta_c_{b}", 552 if b == "NET-ABCDM" else (608 if b == "NET-Guarulhos" else 656))
+            hoje_c_b = st.session_state.get(f"inp_hoje_c_{b}", 12 if b == "NET-ABCDM" else (19 if b == "NET-Guarulhos" else 39))
+            ganho_b = st.session_state.get(f"inp_ganho_{b}", 27 if b == "NET-ABCDM" else (40 if b == "NET-Guarulhos" else 42))
 
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
@@ -1017,7 +1011,6 @@ elif st.session_state.pagina == "3. Visualização da Prévia":
                 </tr>
                 """)
 
-        # Linha Total
         g_den_geral = g_quebra + g_prod
         g_efic = (max(0.0, 1.0 - (g_quebra / g_den_geral)) * 100) if g_den_geral > 0 else 0.0
         g_media_os = (g_prod / g_montados) if g_montados > 0 else 0.0
