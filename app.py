@@ -1117,7 +1117,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             f'<td>{g_retorno}</td>'
             f'<td>{g_pme}</td>'
             f'<td>{g_q_pme:.1f}%</td>'
-            f'<td>{g_canc_pme}</td>'
+            f'<td>{g_pme_canc}</td>'
             f'</tr>'
             f'</tbody>'
             f'</table>'
