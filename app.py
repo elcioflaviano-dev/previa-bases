@@ -47,9 +47,9 @@ st.markdown("""
     .th-retorno { background-color: #a9dfbf; color: #145a32; }
     .th-pme { background-color: #aed6f1; color: #1b4f72; }
     
-    .tr-base { background-color: #eafaf1; font-weight: bold; color: #145a32; }
-    .tr-sup { background-color: #ffffff; color: #2c3e50; }
-    .tr-total { background-color: #d4efdf; font-weight: 900; color: #145a32; border-top: 2px solid #27ae60; }
+    .tr-base { background-color: #eafaf1; font-weight: bold; color: #145a32; font-size: 13px; }
+    .tr-sup { background-color: #ffffff; color: #2c3e50; font-size: 11px; }
+    .tr-total { background-color: #d4efdf; font-weight: 900; color: #145a32; font-size: 13px; border-top: 2px solid #27ae60; }
     .red-text { color: #c0392b; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
@@ -786,7 +786,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         )
 
 # ==============================================================================
-# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (DIRETORIA)
+# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (DIRETORIA COM EXPANDERS)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
@@ -823,7 +823,10 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             proj_dia = produtivo + (os_aberta * efic)
             pontos = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"]["Pontos Prev."].sum()
             media_os = (produtivo / montados) if montados > 0 else 0.0
+            
+            # O.S. Sem Consultivo subtrai o consultivo de hoje
             os_sem_c = max(0, produtivo - hoje_c)
+            
             os_canc = len(df_sub[df_sub["CANCELADAS"] == "CANCELADO"])
             saiu_toa = len(df_sub[df_sub["Tipo de OS"] == "SAIU DO TOA"])
 
@@ -863,55 +866,56 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "_raw_q_pme": len(df_pme[df_pme["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])])
             }
 
-        tabela_html = [
-            '<table class="custom-table">',
-            '<thead>',
-            '<tr>',
-            f'<th rowspan="2" class="th-data">{data_formatada}</th>',
-            '<th rowspan="2" class="th-data">Parados</th>',
-            '<th rowspan="2" class="th-data">Montados</th>',
-            '<th colspan="2" class="th-qtd-os">QTDE. DE O.S. OUTUBRO</th>',
-            '<th colspan="4" class="th-consult">CONSULTIVO OUTUBRO</th>',
-            '<th colspan="10" class="th-prod">PRODUTIVIDADE (Projeção)</th>',
-            '<th rowspan="2" class="th-prod">ND</th>',
-            '<th colspan="2" class="th-quebra-claro">QUEBRA CLARO</th>',
-            '<th rowspan="2" class="th-ganho">GANHO<br>O.S.</th>',
-            '<th colspan="2" class="th-gpon">GPON</th>',
-            '<th colspan="3" class="th-mig">MIGRAÇÃO</th>',
-            '<th rowspan="2" class="th-retorno">RETORNO<br>WO</th>',
-            '<th colspan="3" class="th-pme">PME</th>',
-            '</tr>',
-            '<tr>',
-            '<th class="th-qtd-os">Meta</th>',
-            '<th class="th-qtd-os">Projeção</th>',
-            '<th class="th-consult">Meta</th>',
-            '<th class="th-consult">Projeção</th>',
-            '<th class="th-consult">Hoje</th>',
-            '<th class="th-consult">O.S</th>',
-            '<th class="th-prod">TOTAL O.S.</th>',
-            '<th class="th-prod">O.S. ABERTA</th>',
-            '<th class="th-prod">Pontos</th>',
-            '<th class="th-prod">Efic. (%)</th>',
-            '<th class="th-prod">Média O.S.</th>',
-            '<th class="th-prod">O.S. Exec.</th>',
-            '<th class="th-prod">O.S Sem Consult</th>',
-            '<th class="th-prod">Quebra INS (%)</th>',
-            '<th class="th-prod">Quebra SERV (%)</th>',
-            '<th class="th-prod">Quebra ND (%)</th>',
-            '<th class="th-quebra-claro">O.S. Canc.</th>',
-            '<th class="th-quebra-claro">Saiu TOA</th>',
-            '<th class="th-gpon">Total O.S.</th>',
-            '<th class="th-gpon">Quebra</th>',
-            '<th class="th-mig">Total O.S.</th>',
-            '<th class="th-mig">Quebra</th>',
-            '<th class="th-mig">Canc.</th>',
-            '<th class="th-pme">WO</th>',
-            '<th class="th-pme">Quebra</th>',
-            '<th class="th-pme">Canc.</th>',
-            '</tr>',
-            '</thead>',
-            '<tbody>'
-        ]
+        def gerar_cabecalho_html():
+            return f"""
+            <table class="custom-table">
+                <thead>
+                    <tr>
+                        <th rowspan="2" class="th-data">{data_formatada}</th>
+                        <th rowspan="2" class="th-data">Parados</th>
+                        <th rowspan="2" class="th-data">Montados</th>
+                        <th colspan="2" class="th-qtd-os">QTDE. DE O.S. OUTUBRO</th>
+                        <th colspan="4" class="th-consult">CONSULTIVO OUTUBRO</th>
+                        <th colspan="10" class="th-prod">PRODUTIVIDADE (Projeção)</th>
+                        <th rowspan="2" class="th-prod">ND</th>
+                        <th colspan="2" class="th-quebra-claro">QUEBRA CLARO</th>
+                        <th rowspan="2" class="th-ganho">GANHO<br>O.S.</th>
+                        <th colspan="2" class="th-gpon">GPON</th>
+                        <th colspan="3" class="th-mig">MIGRAÇÃO</th>
+                        <th rowspan="2" class="th-retorno">RETORNO<br>WO</th>
+                        <th colspan="3" class="th-pme">PME</th>
+                    </tr>
+                    <tr>
+                        <th class="th-qtd-os">Meta</th>
+                        <th class="th-qtd-os">Projeção</th>
+                        <th class="th-consult">Meta</th>
+                        <th class="th-consult">Projeção</th>
+                        <th class="th-consult">Hoje</th>
+                        <th class="th-consult">O.S</th>
+                        <th class="th-prod">TOTAL O.S.</th>
+                        <th class="th-prod">O.S. ABERTA</th>
+                        <th class="th-prod">Pontos</th>
+                        <th class="th-prod">Efic. (%)</th>
+                        <th class="th-prod">Média O.S.</th>
+                        <th class="th-prod">O.S. Exec.</th>
+                        <th class="th-prod">O.S Sem Consult</th>
+                        <th class="th-prod">Quebra INS (%)</th>
+                        <th class="th-prod">Quebra SERV (%)</th>
+                        <th class="th-prod">Quebra ND (%)</th>
+                        <th class="th-quebra-claro">O.S. Canc.</th>
+                        <th class="th-quebra-claro">Saiu TOA</th>
+                        <th class="th-gpon">Total O.S.</th>
+                        <th class="th-gpon">Quebra</th>
+                        <th class="th-mig">Total O.S.</th>
+                        <th class="th-mig">Quebra</th>
+                        <th class="th-mig">Canc.</th>
+                        <th class="th-pme">WO</th>
+                        <th class="th-pme">Quebra</th>
+                        <th class="th-pme">Canc.</th>
+                    </tr>
+                </thead>
+                <tbody>
+            """
 
         g_parados = 0; g_montados = 0; g_meta_os = 0; g_proj_os = 0
         g_meta_cons = 0; g_proj_cons = 0; g_hoje_cons = 0; g_os_cons = 0
@@ -921,10 +925,10 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         g_raw_ins_q = 0; g_raw_ins_tot = 0; g_raw_serv_q = 0; g_raw_serv_tot = 0
         g_raw_nd_q = 0; g_raw_gpon_q = 0; g_raw_mig_q = 0; g_raw_pme_q = 0
 
+        metricas_bases = {}
+
         for b in bases_padrao:
             df_b = df_valido[df_valido["Projeto"].str.upper() == b.upper()]
-            sups_b = st.session_state.supervisores_por_base.get(b, [])
-
             p_base = st.session_state.get(f"inp_par_{b}", 4 if b == "NET-ABCDM" else (6 if b == "NET-Guarulhos" else 5))
             m_base = st.session_state.get(f"inp_mon_{b}", 68 if b == "NET-ABCDM" else (76 if b == "NET-Guarulhos" else 80))
             meta_os_b = st.session_state.get(f"inp_meta_os_{b}", 11800 if b == "NET-ABCDM" else 12200)
@@ -956,71 +960,54 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             g_raw_nd_q += res_b["_raw_q_nd"]; g_raw_gpon_q += res_b["_raw_q_gpon"]
             g_raw_mig_q += res_b["_raw_q_mig"]; g_raw_pme_q += res_b["_raw_q_pme"]
 
-            num_linhas_span = len(sups_b) + 1
+            metricas_bases[b] = {
+                "res": res_b, "p_base": p_base, "m_base": m_base, "meta_os": meta_os_b,
+                "proj_os": proj_os_b, "meta_c": meta_c_b, "proj_c": proj_c_b, "hoje_c": hoje_c_b,
+                "os_consult": os_consult_b, "ganho": ganho_b
+            }
+
+        # --- TABELA PRINCIPAL (APENAS AS BASES COM FONTE MAIOR) ---
+        tabela_html = [gerar_cabecalho_html()]
+
+        for b in bases_padrao:
+            m = metricas_bases[b]
+            res = m["res"]
             tabela_html.append(
                 f'<tr class="tr-base">'
                 f'<td style="text-align: left; padding-left: 8px;">{b}</td>'
-                f'<td>{p_base}</td>'
-                f'<td>{m_base}</td>'
-                f'<td rowspan="{num_linhas_span}">{meta_os_b:,.0f}</td>'
-                f'<td rowspan="{num_linhas_span}" class="red-text">{proj_os_b:,.0f}</td>'
-                f'<td rowspan="{num_linhas_span}">{meta_c_b}</td>'
-                f'<td rowspan="{num_linhas_span}" class="red-text">{proj_c_b}</td>'
-                f'<td rowspan="{num_linhas_span}">{hoje_c_b}</td>'
-                f'<td rowspan="{num_linhas_span}">{os_consult_b}</td>'
-                f'<td>{res_b["tot_os"]}</td>'
-                f'<td>{res_b["os_aberta"]}</td>'
-                f'<td>{res_b["pontos"]}</td>'
-                f'<td>{res_b["efic"]:.1f}%</td>'
-                f'<td>{res_b["media_os"]:.1f}</td>'
-                f'<td>{res_b["produtivo"]}</td>'
-                f'<td rowspan="{num_linhas_span}">{res_b["os_sem_c"]}</td>'
-                f'<td>{res_b["q_ins"]:.1f}%</td>'
-                f'<td>{res_b["q_serv"]:.1f}%</td>'
-                f'<td>{res_b["q_nd"]:.1f}%</td>'
-                f'<td rowspan="{num_linhas_span}">{res_b["tot_nd"]}</td>'
-                f'<td>{res_b["os_canc"]}</td>'
-                f'<td>{res_b["saiu_toa"]}</td>'
-                f'<td rowspan="{num_linhas_span}">{ganho_b}</td>'
-                f'<td rowspan="{num_linhas_span}">{res_b["tot_gpon"]}</td>'
-                f'<td rowspan="{num_linhas_span}">{res_b["q_gpon"]:.1f}%</td>'
-                f'<td rowspan="{num_linhas_span}">{res_b["tot_mig"]}</td>'
-                f'<td rowspan="{num_linhas_span}">{res_b["q_mig"]:.1f}%</td>'
-                f'<td rowspan="{num_linhas_span}">{res_b["canc_mig"]}</td>'
-                f'<td rowspan="{num_linhas_span}">{res_b["retorno_wo"]}</td>'
-                f'<td>{res_b["tot_pme"]}</td>'
-                f'<td>{res_b["q_pme"]:.1f}%</td>'
-                f'<td>{res_b["canc_pme"]}</td>'
+                f'<td>{m["p_base"]}</td>'
+                f'<td>{m["m_base"]}</td>'
+                f'<td>{m["meta_os"]:,.0f}</td>'
+                f'<td class="red-text">{m["proj_os"]:,.0f}</td>'
+                f'<td>{m["meta_c"]}</td>'
+                f'<td class="red-text">{m["proj_c"]}</td>'
+                f'<td>{m["hoje_c"]}</td>'
+                f'<td>{m["os_consult"]}</td>'
+                f'<td>{res["tot_os"]}</td>'
+                f'<td>{res["os_aberta"]}</td>'
+                f'<td>{res["pontos"]}</td>'
+                f'<td>{res["efic"]:.1f}%</td>'
+                f'<td>{res["media_os"]:.1f}</td>'
+                f'<td>{res["produtivo"]}</td>'
+                f'<td>{res["os_sem_c"]}</td>'
+                f'<td>{res["q_ins"]:.1f}%</td>'
+                f'<td>{res["q_serv"]:.1f}%</td>'
+                f'<td>{res["q_nd"]:.1f}%</td>'
+                f'<td>{res["tot_nd"]}</td>'
+                f'<td>{res["os_canc"]}</td>'
+                f'<td>{res["saiu_toa"]}</td>'
+                f'<td>{m["ganho"]}</td>'
+                f'<td>{res["tot_gpon"]}</td>'
+                f'<td>{res["q_gpon"]:.1f}%</td>'
+                f'<td>{res["tot_mig"]}</td>'
+                f'<td>{res["q_mig"]:.1f}%</td>'
+                f'<td>{res["canc_mig"]}</td>'
+                f'<td>{res["retorno_wo"]}</td>'
+                f'<td>{res["tot_pme"]}</td>'
+                f'<td>{res["q_pme"]:.1f}%</td>'
+                f'<td>{res["canc_pme"]}</td>'
                 f'</tr>'
             )
-
-            for s in sups_b:
-                df_s = df_b[df_b["Supervisor"] == s]
-                p_sup = st.session_state.get(f"p_{b}_{s}", 0)
-                m_sup = st.session_state.get(f"m_{b}_{s}", 20)
-                res_s = calcular_metricas(df_s, m_sup, 0)
-                
-                tabela_html.append(
-                    f'<tr class="tr-sup">'
-                    f'<td style="text-align: left; padding-left: 20px;">{s}</td>'
-                    f'<td>{p_sup}</td>'
-                    f'<td>{m_sup}</td>'
-                    f'<td>{res_s["tot_os"]}</td>'
-                    f'<td>{res_s["os_aberta"]}</td>'
-                    f'<td>{res_s["pontos"]}</td>'
-                    f'<td>{res_s["efic"]:.1f}%</td>'
-                    f'<td>{res_s["media_os"]:.1f}</td>'
-                    f'<td>{res_s["produtivo"]}</td>'
-                    f'<td>{res_s["q_ins"]:.1f}%</td>'
-                    f'<td>{res_s["q_serv"]:.1f}%</td>'
-                    f'<td>{res_s["q_nd"]:.1f}%</td>'
-                    f'<td>{res_s["os_canc"]}</td>'
-                    f'<td>{res_s["saiu_toa"]}</td>'
-                    f'<td>{res_s["tot_pme"]}</td>'
-                    f'<td>{res_s["q_pme"]:.1f}%</td>'
-                    f'<td>{res_s["canc_pme"]}</td>'
-                    f'</tr>'
-                )
 
         g_den_geral = g_quebra + g_prod
         g_efic = (max(0.0, 1.0 - (g_quebra / g_den_geral)) * 100) if g_den_geral > 0 else 0.0
@@ -1074,6 +1061,52 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         st.markdown("".join(tabela_html), unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
+        # --- DROP-DOWNS (EXPANDERS) PARA OS SUPERVISORES DE CADA BASE ---
+        st.markdown("### 🔍 Detalhamento por Supervisores (Expandir Bases)")
+        for b in bases_padrao:
+            df_b = df_valido[df_valido["Projeto"].str.upper() == b.upper()]
+            sups_b = st.session_state.supervisores_por_base.get(b, [])
+            
+            with st.expander(f"➕ Ver Supervisores da Base: {b}"):
+                tabela_sup_html = [gerar_cabecalho_html()]
+                for s in sups_b:
+                    df_s = df_b[df_b["Supervisor"] == s]
+                    p_sup = st.session_state.get(f"p_{b}_{s}", 0)
+                    m_sup = st.session_state.get(f"m_{b}_{s}", 20)
+                    res_s = calcular_metricas(df_s, m_sup, 0)
+                    
+                    # Exibe apenas o primeiro nome do supervisor em maiúsculo
+                    primeiro_nome = s.split()[0]
+                    
+                    tabela_sup_html.append(
+                        f'<tr class="tr-sup">'
+                        f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
+                        f'<td>{p_sup}</td>'
+                        f'<td>{m_sup}</td>'
+                        f'<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>'
+                        f'<td>{res_s["tot_os"]}</td>'
+                        f'<td>{res_s["os_aberta"]}</td>'
+                        f'<td>{res_s["pontos"]}</td>'
+                        f'<td>{res_s["efic"]:.1f}%</td>'
+                        f'<td>{res_s["media_os"]:.1f}</td>'
+                        f'<td>{res_s["produtivo"]}</td>'
+                        f'<td>-</td>'
+                        f'<td>{res_s["q_ins"]:.1f}%</td>'
+                        f'<td>{res_s["q_serv"]:.1f}%</td>'
+                        f'<td>{res_s["q_nd"]:.1f}%</td>'
+                        f'<td>-</td>'
+                        f'<td>{res_s["os_canc"]}</td>'
+                        f'<td>{res_s["saiu_toa"]}</td>'
+                        f'<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>'
+                        f'<td>{res_s["tot_pme"]}</td>'
+                        f'<td>{res_s["q_pme"]:.1f}%</td>'
+                        f'<td>{res_s["canc_pme"]}</td>'
+                        f'</tr>'
+                    )
+                tabela_sup_html.append('</tbody></table>')
+                st.markdown("".join(tabela_sup_html), unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
         if st.session_state.df_aniel_full is not None:
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
