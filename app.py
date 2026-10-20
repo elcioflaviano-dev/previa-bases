@@ -297,6 +297,7 @@ DESC_OS_DICT = {
     "MUDANCA DE ENDERECO - INSTALAR ASSINATURA": "SERVIÇOS",
     "MUDANCA DE ENDERECO - INSTALAR ASSINATURA DIGITAL": "SERVIÇOS",
     "MUDANCA DE ENDERECO - INSTALAR PONTO ADICIONAL VIRTUA": "SERVIÇOS",
+    "MUDANCA DE BASE": "SERVIÇOS",
     "MUDANCA DE ENDERECO - INSTALAR PONTO VOIP": "SERVIÇOS",
     "MUDANCA DE LOCAL DE PONTO": "SERVIÇOS",
     "MUDANCA DE LOCAL DE PONTO DIGITAL": "SERVIÇOS",
@@ -399,6 +400,19 @@ if uploaded_aniel is not None:
             df_aniel = ler_arquivo_seguro(uploaded_aniel)
             df_aniel.columns = [str(c).strip() for c in df_aniel.columns]
 
+            # --- FILTRO: EXCLUIR LINHAS COM 'VT' NA COLUNA PROJETO ---
+            col_projeto = None
+            for c in df_aniel.columns:
+                if c.lower() == "projeto":
+                    col_projeto = c
+                    break
+
+            if col_projeto:
+                # Remove linhas onde a coluna Projeto contém "VT" (ignora maiúsculas/minúsculas)
+                df_aniel = df_aniel[
+                    ~df_aniel[col_projeto].astype(str).str.upper().str.contains(r"\bVT\b|VT", regex=True, na=False)
+                ].reset_index(drop=True)
+
             colunas_obrigatorias = ["ST1", "ST2", "ST3", "CANCELADAS", "PME"]
             for col in colunas_obrigatorias:
                 if col not in df_aniel.columns:
@@ -455,7 +469,7 @@ if uploaded_aniel is not None:
                         df_aniel.at[idx, "ST3"] = ""
                         df_aniel.at[idx, "PME"] = ""
 
-            # Garantir conversão segura da coluna Pontos Prev. para float para evitar erro de tipo string
+            # Garantir conversão segura de Pontos Prev. para float
             if "Pontos Prev." not in df_aniel.columns:
                 df_aniel["Pontos Prev."] = 0.0
             else:
