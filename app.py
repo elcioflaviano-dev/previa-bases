@@ -933,7 +933,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             
             proj_dia = prod_count + (aberta_count * efic)
             
-            # --- PONTOS: SOMA PURA DA COLUNA PONTOS PREV. APENAS DAS PRODUTIVAS ---
+            # PONTOS: Soma pura da coluna Pontos Prev. apenas das produtivas
             pontos_total = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
             pontos = int(round(pontos_total, 0))
 
@@ -963,9 +963,11 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
+                "os_sem_c": 0, "tot_nd": len(df_nd), "q_nd": calc_q(df_nd),
                 "os_canc": os_canc, "saiu_toa": saiu_toa,
-                "tot_gpon": len(df_gpon), "q_gpon": calc_q(df_gpon), "tot_mig": len(df_mig),
-                "q_mig": calc_q(df_mig), "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]),
+                "tot_gpon": len(df_gpon), "q_gpon": calc_q(df_gpon),
+                "tot_mig": len(df_mig), "q_mig": calc_q(df_mig),
+                "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]),
                 "retorno_wo": len(df_ret), "tot_pme": len(df_pme), "q_pme": calc_q(df_pme),
                 "canc_pme": len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"]),
                 "_raw_q_ins": len(df_ins[df_ins["Tipo de OS"] == "IMPRODUTIVA"]),
