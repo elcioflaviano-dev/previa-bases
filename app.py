@@ -1287,8 +1287,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 <FollowUp>
 Com este ajuste na coluna **O.S Sem Consult** subtraindo as O.S. Executadas pelo Consultivo, os valores bateram exatamente com `270`, `320`, `214` e `804` no total?
 </FollowUp>
-
-<ElicitationsGroup>
   <ElicitationItem>Sim, agora a coluna O.S Sem Consult bateu perfeitamente com a minha planilha</ElicitationItem>
   <ElicitationItem>Quero verificar mais algum ajuste</ElicitationItem>
 </ElicitationsGroup>
