@@ -965,7 +965,16 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
             df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"]
             df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"]
-            df_nd = df_sub[df_sub["Tipo de Serviço"].isin(servicos_nd)]
+            
+            # --- FILTRO EXATO PARA A COLUNA ND ---
+            servicos_nd_alvos = [
+                "ADESAO - INSTALACAO DE ASSINATURA",
+                "ADESAO ENTREGA STREAMING",
+                "ADESAO - INSTALACAO DE ASSINATURA DIGITAL"
+            ]
+            ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip()
+            df_nd = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])]
+
             df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"]
             df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"]
             df_ret = df_sub[df_sub["QUEBRAS"] == "RETORNO"]
@@ -994,7 +1003,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "_raw_q_mig": len(df_mig[df_mig["Tipo de OS"] == "IMPRODUTIVA"]),
                 "_raw_q_pme": len(df_pme[df_pme["Tipo de OS"] == "IMPRODUTIVA"])
             }
-
         def gerar_cabecalho_html():
             return f"""
             <table class="custom-table">
