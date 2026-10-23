@@ -268,7 +268,6 @@ BAIXAS_DICT = {
     "106 - CLIENTE AUSENTE": "IMPRODUTIVA",
     "107 - ENTRADA NAO AUTORIZADA": "IMPRODUTIVA",
     "108 - Realizar Obra Civil ou alteracao rede eletrica": "IMPRODUTIVA",
-    "110 - PROBLEMA NAVIGATION": "IMPRODUTIVA",
     "110 - PROBLEMA NA TUBULACAO": "IMPRODUTIVA",
     "112 - SEM ACESSO AO DG / SOTAO / COMODO": "IMPRODUTIVA",
     "113 - Sem TV / Computador Na Residencia/ Celular": "IMPRODUTIVA",
@@ -932,13 +931,13 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
             efic = max(0.0, 1.0 - quebra_pct)
             
-            proj_dia = prod_count + (aberta_count * efic)
-            
-            # --- FÓRMULA EXATA DOS PONTOS PROJETADOS: Produtivas + (Em Aberto * Eficiência) ---
-            pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
-            pontos_abert = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
-            pontos_proj = pontos_prod + (pontos_abert * efic)
-            pontos = int(round(pontos_proj, 0))
+            # --- FÓRMULA EXATA DE O.S. EXEC. (PROJ): Produtiva + (Em Aberto * Eficiência) ---
+            proj_os_exec = prod_count + (aberta_count * efic)
+            proj_dia = int(round(proj_os_exec, 0))
+
+            # --- PONTOS: SOMA PURA DA COLUNA PONTOS PREV. APENAS DAS PRODUTIVAS ---
+            pontos_total = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
+            pontos = int(round(pontos_total, 0))
 
             media_os = (prod_count / montados) if montados > 0 else 0.0
             
@@ -1111,7 +1110,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 f'<td>{res["pontos"]}</td>'
                 f'<td>{res["efic"]:.1f}%</td>'
                 f'<td class="col-destaque-azul">{res["media_os"]:.1f}</td>'
-                f'<td>{res["produtivo"]}</td>'
+                f'<td>{res["proj_dia"]}</td>'
                 f'<td class="col-destaque-amarelo">{res["os_sem_c"]}</td>'
                 f'<td>{res["q_ins"]:.1f}%</td>'
                 f'<td>{res["q_serv"]:.1f}%</td>'
@@ -1134,6 +1133,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         g_den_quebra = g_quebra + g_prod
         g_efic = (max(0.0, 1.0 - (g_quebra / g_den_quebra)) * 100) if g_den_quebra > 0 else 0.0
         g_media_os = (g_prod / g_montados) if g_montados > 0 else 0.0
+        g_proj_exec_total = int(round(g_prod + (g_aberta * (g_efic / 100.0)), 0))
         g_q_ins = (g_raw_ins_q / g_raw_ins_tot * 100) if g_raw_ins_tot > 0 else 0.0
         g_q_serv = (g_raw_serv_q / g_raw_serv_tot * 100) if g_raw_serv_tot > 0 else 0.0
         g_q_nd = (g_raw_nd_q / g_nd * 100) if g_nd > 0 else 0.0
@@ -1157,7 +1157,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             f'<td>{g_pontos}</td>'
             f'<td>{g_efic:.1f}%</td>'
             f'<td class="col-destaque-azul">{g_media_os:.1f}</td>'
-            f'<td>{g_prod}</td>'
+            f'<td>{g_proj_exec_total}</td>'
             f'<td class="col-destaque-amarelo">{g_sem_cons}</td>'
             f'<td>{g_q_ins:.1f}%</td>'
             f'<td>{g_q_serv:.1f}%</td>'
@@ -1214,7 +1214,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                     f'<td>{res_b["pontos"]}</td>'
                     f'<td>{res_b["efic"]:.1f}%</td>'
                     f'<td class="col-destaque-azul">{res_b["media_os"]:.1f}</td>'
-                    f'<td>{res_b["produtivo"]}</td>'
+                    f'<td>{res_b["proj_dia"]}</td>'
                     f'<td class="col-destaque-amarelo">{res_b["os_sem_c"]}</td>'
                     f'<td>{res_b["q_ins"]:.1f}%</td>'
                     f'<td>{res_b["q_serv"]:.1f}%</td>'
@@ -1252,7 +1252,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                         f'<td>{res_s["pontos"]}</td>'
                         f'<td>{res_s["efic"]:.1f}%</td>'
                         f'<td class="col-destaque-azul">{res_s["media_os"]:.1f}</td>'
-                        f'<td>{res_s["produtivo"]}</td>'
+                        f'<td>{res_s["proj_dia"]}</td>'
                         f'<td></td>'
                         f'<td>{res_s["q_ins"]:.1f}%</td>'
                         f'<td>{res_s["q_serv"]:.1f}%</td>'
