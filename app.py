@@ -127,9 +127,9 @@ def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_h
     df_hist = carregar_historico_sheets()
     df_b = df_hist[df_hist["Base"] == base_norm].copy()
     
-    if data_hoje_str and os_hoje and os_hoje > 0:
+    if data_hoje_str and os_hoje is not None and os_hoje > 0:
         if not (df_b["Data"] == str(data_hoje_str)).any():
-            nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_exec)}])
+            nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_hoje)}])
             df_b = pd.concat([df_b, nova], ignore_index=True)
 
     if not df_b.empty:
