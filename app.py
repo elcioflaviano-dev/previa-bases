@@ -484,7 +484,7 @@ DESC_OS_DICT = {
     "ENTREGA DE CONTROLE REMOTO VOZ": "SERVIÇOS",
     "LIMPEZA DE RUIDO INDOOR": "SERVIÇOS",
     "MANUTENCAO RETORNO COP": "SERVIÇOS",
-    "INSTALACAO CABO DE REDE STREAMING": "SERVIÇOS",
+    "INSTALACAO CABO DE REDE STREAMING": "INSTALAÇÃO",
     "MANUTENCAO PREVENTIVA INDOOR": "SERVIÇOS",
     "INSTALACAO WIFI 360": "SERVIÇOS",
     "TROCA DE EQUIPAMENTO HD": "SERVIÇOS",
@@ -732,7 +732,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (CONSULTIVO AUTOMÁTICO = MONTADOS * 8)
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (NOVA ORDEM DE MENU SOLICITADA)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -774,31 +774,50 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             b_proj = item["projeto"]
             with tabs[i]:
                 d = defaults.get(b_proj, {})
-                c1, c2, c3, c4 = st.columns(4)
-                with c1:
-                    st.number_input(f"Total Parados ({b_label})", value=d.get("parados", 0), key=f"inp_par_{b_proj}")
-                    montados_val = st.number_input(f"Total Montados ({b_label})", value=d.get("montados", 0), key=f"inp_mon_{b_proj}")
-                with c2:
-                    st.number_input(f"Meta O.S. Mês ({b_label})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b_proj}")
-                    st.number_input(f"Ganho O.S. ({b_label})", value=d.get("ganho_os", 0), key=f"inp_ganho_{b_proj}")
-                with c3:
-                    # Consultivo Automático = Montados * 8
-                    meta_cons_auto = int(montados_val * 8)
-                    st.markdown(f"**Meta Consultivo (Automático):**\n### {meta_cons_auto}")
-                    st.session_state[f"inp_meta_c_{b_proj}"] = meta_cons_auto
-                with c4:
-                    st.number_input(f"Hoje Consultivo ({b_label})", value=d.get("hoje_cons", 0), key=f"inp_hoje_c_{b_proj}")
                 
-                st.markdown("##### 👥 Equipa de Supervisores:")
+                c1, c2, c3, c4 = st.columns(4)
+                
+                # 1. Total de Montados e 2. Total de Parados
+                with c1:
+                    montados_val = st.number_input(f"Total Montados ({b_label})", value=d.get("montados", 0), key=f"inp_mon_{b_proj}")
+                    parados_val = st.number_input(f"Total Parados ({b_label})", value=d.get("parados", 0), key=f"inp_par_{b_proj}")
+                
+                # 3. Meta O.S. Mês e Projeção de O.S.
+                with c2:
+                    meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b_proj}")
+                    df_b_temp = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()] if df_valido is not None else pd.DataFrame()
+                    prod_temp = len(df_b_temp[df_b_temp["Tipo de OS"] == "PRODUTIVA"])
+                    media_temp = obter_media_acumulada_sheets(b_proj, prod_temp, dias_trab_auto)
+                    proj_os_val = int(round(media_temp * dias_uteis_auto, 0))
+                    st.markdown(f"**Projeção de O.S. (Mês):**\n### {proj_os_val:,}")
+
+                # 4. Meta do Consultivo (Automático = Montados * 8) e Projeção do Consultivo
+                with c3:
+                    meta_cons_auto = int(montados_val * 8)
+                    st.markdown(f"**Meta do Consultivo (Automático):**\n### {meta_cons_auto}")
+                    st.session_state[f"inp_meta_c_{b_proj}"] = meta_cons_auto
+
+                    hoje_cons_temp = d.get("hoje_cons", 12)
+                    proj_cons_val = int(round((hoje_cons_temp / dias_trab_auto) * dias_uteis_auto, 0)) if dias_trab_auto > 0 else 0
+                    st.markdown(f"**Projeção do Consultivo:**\n### {proj_cons_val}")
+
+                # 5. Hoje Consultivo (Total do dia) e Total O.S. do Consultivo
+                with c4:
+                    hoje_cons_val = st.number_input(f"Hoje Consultivo (Total do Dia) ({b_label})", value=hoje_cons_temp, key=f"inp_hoje_c_{b_proj}")
+                    os_consult_val = hoje_cons_val * 2
+                    st.markdown(f"**Total O.S. do Consultivo:**\n### {os_consult_val}")
+
+                st.markdown("---")
+                st.markdown(f"##### 👥 Equipa de Supervisores (Montados e Parados):")
                 sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
                 col_s1, col_s2 = st.columns(2)
                 for sup in sups_base:
                     def_p = d.get("sup_parados", {}).get(sup, 0)
                     def_m = d.get("sup_montados", {}).get(sup, 20)
                     with col_s1:
-                        st.number_input(f"Parados: {sup}", value=def_p, key=f"p_{b_proj}_{sup}")
-                    with col_s2:
                         st.number_input(f"Montados: {sup}", value=def_m, key=f"m_{b_proj}_{sup}")
+                    with col_s2:
+                        st.number_input(f"Parados: {sup}", value=def_p, key=f"p_{b_proj}_{sup}")
 
         st.markdown("---")
         st.button(
@@ -809,7 +828,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         )
 
 # ==============================================================================
-# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (PROJEÇÃO CORRETA E BLOCOS SEPARADOS)
+# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (BLOCOS SEPARADOS POR BASE)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
@@ -961,7 +980,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             
             salvar_historico_sheets(data_formatada, b_proj, res_b["produtivo"])
             
-            # Projeção correta: (Média Acumulada do dia) * Dias Úteis Totais do Mês (27 dias)
+            # Projeção correta: Média diária acumulada * Dias úteis do mês (27 dias)
             media_acum_b = obter_media_acumulada_sheets(b_proj, res_b["produtivo"], dias_trab)
             proj_os_b = int(round(media_acum_b * dias_uteis))
             
@@ -1071,7 +1090,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             f'<td>{g_q_gpon:.1f}%</td>'
             f'<td>{g_mig}</td>'
             f'<td>{g_q_mig:.1f}%</td>'
-            f'<td>{g_mig_canc}</td>'
+            f'<td>{g_pme_canc}</td>'
             f'<td>{g_retorno}</td>'
             f'<td>{g_pme}</td>'
             f'<td>{g_q_pme:.1f}%</td>'
