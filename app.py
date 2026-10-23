@@ -912,7 +912,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         ]
 
         def calcular_metricas(df_sub, montados, hoje_c):
-            # Filtra para remover os registros de Retorno de Credenciada dos cálculos de produtividade
+            # Filtra para remover os registros de Retorno de Credenciada
             if "Tipo de Serviço" in df_sub.columns:
                 df_sub = df_sub[~df_sub["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)].copy()
 
@@ -925,13 +925,36 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             pct_quebra_geral = (quebra_geral / den_geral) if den_geral > 0 else 0.0
             efic = max(0.0, 1.0 - pct_quebra_geral)
             proj_dia = produtivo + (os_aberta * efic)
-            pontos = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"]["Pontos Prev."].sum()
+            
+            # --- CÁLCULO EXATO DOS PONTOS USANDO O DICIONÁRIO ---
+            df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"].copy()
+            pontos_total = 0.0
+            
+            # Mapeia cada tipo de serviço normalizado para o dicionário de pontos
+            pontos_norm = {limpar_texto(k): float(v) for k, v in PONTOS_DICT.items()}
+            
+            for _, r_os in df_prod.iterrows():
+                ts_raw = limpar_texto(r_os.get("Tipo de Serviço", ""))
+                p_val = 0.0
+                if ts_raw in pontos_norm:
+                    p_val = pontos_norm[ts_raw]
+                else:
+                    for kp, vp in pontos_norm.items():
+                        if ts_raw != "" and (ts_raw in kp or kp in ts_raw):
+                            p_val = vp
+                            break
+                # Se não encontrar no dicionário, pega o valor da coluna Pontos Prev. se existir
+                if p_val == 0.0:
+                    p_val = float(r_os.get("Pontos Prev.", 0.0) or 0.0)
+                
+                pontos_total += p_val
+
+            pontos = int(round(pontos_total, 0))
             media_os = (produtivo / montados) if montados > 0 else 0.0
             
             os_sem_c = max(0, produtivo - hoje_c)
             os_canc = len(df_sub[df_sub["CANCELADAS"] == "CANCELADO"])
             saiu_toa = len(df_sub[df_sub["Tipo de OS"] == "SAIU DO TOA"])
-            # ... restante da função continua igual ...
 
             def calc_q(df_item):
                 q = len(df_item[df_item["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])])
