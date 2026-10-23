@@ -103,21 +103,6 @@ def salvar_historico_sheets(data_str, base, os_exec):
         except Exception:
             pass
 
-def obter_media_acumulada_sheets(base, os_exec_hoje, dias_trabalhados):
-    conn = get_connection()
-    if conn:
-        try:
-            df_hist = conn.read(worksheet="Historico_OS", ttl=0)
-            if df_hist is not None and not df_hist.empty and "Base" in df_hist.columns and "OS_Executadas" in df_hist.columns:
-                # Normaliza o nome da base para garantir o match (ex: NET-ABCDM)
-                df_base = df_hist[df_hist["Base"].astype(str).str.upper() == base.upper()]
-                if not df_base.empty:
-                    tot_exec = pd.to_numeric(df_base["OS_Executadas"], errors="coerce").fillna(0).sum()
-                    return tot_exec / max(1, dias_trabalhados)
-        except Exception:
-            pass
-    return float(os_exec_hoje)
-
 # --- INICIALIZAÇÃO DE ESTADO E NAVEGAÇÃO ---
 etapas = ["1. Upload de Arquivos", "2. Dados Operacionais por Base", "3. Visualização da Prévia"]
 
@@ -211,7 +196,7 @@ BAIXAS_DICT = {
     "106 - CLIENTE AUSENTE": "IMPRODUTIVA",
     "107 - ENTRADA NAO AUTORIZADA": "IMPRODUTIVA",
     "108 - Realizar Obra Civil ou alteracao rede eletrica": "IMPRODUTIVA",
-    "110 - PROBLEMA NA TUBULACAO": "IMPRODUTIVA",
+    "110 - PROBLEMA НА TUBULACAO": "IMPRODUTIVA",
     "112 - SEM ACESSO AO DG / SOTAO / COMODO": "IMPRODUTIVA",
     "113 - Sem TV / Computador Na Residencia/ Celular": "IMPRODUTIVA",
     "114 - Habilitação telefonica não ok": "IMPRODUTIVA",
@@ -489,7 +474,7 @@ DESC_OS_DICT = {
     "MANUTENCAO RETORNO COP": "SERVIÇOS",
     "INSTALACAO CABO DE REDE STREAMING": "INSTALAÇÃO",
     "MANUTENCAO PREVENTIVA INDOOR": "SERVIÇOS",
-    "INSTALACAO WIFI 360": "SERVIÇOS",
+    "INSTALACAO WIFI 360": "INSTALAÇÃO",
     "TROCA DE EQUIPAMENTO HD": "SERVIÇOS",
     "TROCA DE EQUIPAMENTO STREAMING": "SERVIÇOS",
     "ENTREGA EXPRESS CAMERA ADICIONAL": "SERVIÇOS",
@@ -735,7 +720,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (ORDEM ATUALIZADA)
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (ORDEM CORRETA)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -789,17 +774,15 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 with c2:
                     meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b_proj}")
                     
-                    dias_t_seguro = st.session_state.get("dias_trab_auto", 17)
-                    dias_u_seguro = st.session_state.get("dias_uteis_auto", 27)
+                    df_hist_full = carregar_historico_sheets()
+                    soma_temp = 0
+                    if not df_hist_full.empty:
+                        df_b_hist = df_hist_full[df_hist_full["Base"].astype(str).str.upper() == b_proj.upper()]
+                        if not df_b_hist.empty:
+                            soma_temp = pd.to_numeric(df_b_hist["OS_Executadas"], errors="coerce").fillna(0).sum()
                     
-                    if st.session_state.df_valido is not None:
-                        df_b_temp = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()]
-                        prod_temp = len(df_b_temp[df_b_temp["Tipo de OS"] == "PRODUTIVA"])
-                        media_temp = obter_media_acumulada_sheets(b_proj, prod_temp, dias_t_seguro)
-                        proj_os_val = int(round(media_temp * dias_u_seguro, 0))
-                    else:
-                        proj_os_val = 0
-                        
+                    media_temp = soma_temp / max(1, dias_trab_auto)
+                    proj_os_val = int(round(media_temp * dias_uteis_auto, 0))
                     st.markdown(f"**Projeção de O.S. (Mês):**\n### {proj_os_val:,}")
 
                 # 4. Meta Consultivo (Automático = Montados * 8) | Projeção Consultivo
@@ -809,7 +792,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.session_state[f"inp_meta_c_{b_proj}"] = meta_cons_auto
 
                     hoje_cons_temp = d.get("hoje_cons", 12)
-                    proj_cons_val = int(round((hoje_cons_temp / max(1, dias_t_seguro)) * dias_u_seguro, 0))
+                    proj_cons_val = int(round((hoje_cons_temp / max(1, dias_trab_auto)) * dias_uteis_auto, 0))
                     st.markdown(f"**Projeção do Consultivo:**\n### {proj_cons_val}")
 
                 # 5. Hoje Consultivo (Total do Dia) | Total O.S. do Consultivo
@@ -839,7 +822,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         )
 
 # ==============================================================================
-# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (BLOCOS SEPARADOS POR BASE)
+# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (PROJEÇÃO CORRETA E BLOCOS SEPARADOS)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
@@ -981,18 +964,28 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             m_base = st.session_state.get(f"inp_mon_{b_proj}", 68 if "ABCDM" in b_proj else (76 if "Guarulhos" in b_proj else 80))
             meta_os_b = st.session_state.get(f"inp_meta_os_{b_proj}", 11800 if "ABCDM" in b_proj else 12200)
             
-            # Consultivo Automático = Montados * 8
             meta_c_b = int(m_base * 8)
-            
             hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 12 if "ABCDM" in b_proj else (19 if "Guarulhos" in b_proj else 39))
             ganho_b = st.session_state.get(f"inp_ganho_{b_proj}", 27 if "ABCDM" in b_proj else (40 if "Guarulhos" in b_proj else 42))
 
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
+            # Grava no Google Sheets
             salvar_historico_sheets(data_formatada, b_proj, res_b["produtivo"])
             
-            media_acum_b = obter_media_acumulada_sheets(b_proj, res_b["produtivo"], dias_trab)
-            proj_os_b = int(round(media_acum_b * dias_uteis))
+            # Cálculo exato da Projeção de O.S.: Média dos dias até o momento × Dias úteis totais do mês
+            df_hist_full = carregar_historico_sheets()
+            soma_mes = res_b["produtivo"]
+            dias_registrados = dias_trab
+            
+            if not df_hist_full.empty:
+                df_b_hist = df_hist_full[df_hist_full["Base"].astype(str).str.upper() == b_proj.upper()]
+                if not df_b_hist.empty:
+                    soma_mes = pd.to_numeric(df_b_hist["OS_Executadas"], errors="coerce").fillna(0).sum()
+                    dias_registrados = max(1, df_b_hist["Data"].nunique())
+
+            media_diaria = soma_mes / dias_registrados
+            proj_os_b = int(round(media_diaria * dias_uteis, 0))
             
             proj_c_b = int(round((hoje_c_b / dias_trab) * dias_uteis)) if dias_trab > 0 else 0
             os_consult_b = hoje_c_b * 2
