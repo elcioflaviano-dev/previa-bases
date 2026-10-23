@@ -58,67 +58,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- HISTÓRICO BASE GARANTIDO (OUTUBRO 2026: 01/10 ATÉ 22/10) ---
-HISTORICO_PADRAO = [
-    {"Data": "01/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 342},
-    {"Data": "01/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 415},
-    {"Data": "01/10/2026", "Base": "NET-LESTE", "OS_Executadas": 322},
-    {"Data": "02/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 339},
-    {"Data": "02/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 416},
-    {"Data": "02/10/2026", "Base": "NET-LESTE", "OS_Executadas": 431},
-    {"Data": "03/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 406},
-    {"Data": "03/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 390},
-    {"Data": "03/10/2026", "Base": "NET-LESTE", "OS_Executadas": 384},
-    {"Data": "05/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 356},
-    {"Data": "05/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 378},
-    {"Data": "05/10/2026", "Base": "NET-LESTE", "OS_Executadas": 370},
-    {"Data": "06/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 405},
-    {"Data": "06/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 387},
-    {"Data": "06/10/2026", "Base": "NET-LESTE", "OS_Executadas": 368},
-    {"Data": "07/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 384},
-    {"Data": "07/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 387},
-    {"Data": "07/10/2026", "Base": "NET-LESTE", "OS_Executadas": 375},
-    {"Data": "08/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 405},
-    {"Data": "08/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 417},
-    {"Data": "08/10/2026", "Base": "NET-LESTE", "OS_Executadas": 412},
-    {"Data": "09/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 411},
-    {"Data": "09/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 410},
-    {"Data": "09/10/2026", "Base": "NET-LESTE", "OS_Executadas": 433},
-    {"Data": "10/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 394},
-    {"Data": "10/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 432},
-    {"Data": "10/10/2026", "Base": "NET-LESTE", "OS_Executadas": 369},
-    {"Data": "12/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 194},
-    {"Data": "12/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 285},
-    {"Data": "12/10/2026", "Base": "NET-LESTE", "OS_Executadas": 334},
-    {"Data": "13/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 395},
-    {"Data": "13/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 421},
-    {"Data": "13/10/2026", "Base": "NET-LESTE", "OS_Executadas": 422},
-    {"Data": "14/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 363},
-    {"Data": "14/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 415},
-    {"Data": "14/10/2026", "Base": "NET-LESTE", "OS_Executadas": 399},
-    {"Data": "15/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 407},
-    {"Data": "15/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 472},
-    {"Data": "15/10/2026", "Base": "NET-LESTE", "OS_Executadas": 408},
-    {"Data": "16/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 359},
-    {"Data": "16/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 372},
-    {"Data": "16/10/2026", "Base": "NET-LESTE", "OS_Executadas": 349},
-    {"Data": "17/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 313},
-    {"Data": "17/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 382},
-    {"Data": "17/10/2026", "Base": "NET-LESTE", "OS_Executadas": 278},
-    {"Data": "19/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 392},
-    {"Data": "19/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 377},
-    {"Data": "19/10/2026", "Base": "NET-LESTE", "OS_Executadas": 419},
-    {"Data": "20/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 408},
-    {"Data": "20/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 423},
-    {"Data": "20/10/2026", "Base": "NET-LESTE", "OS_Executadas": 389},
-    {"Data": "21/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 366},
-    {"Data": "21/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 402},
-    {"Data": "21/10/2026", "Base": "NET-LESTE", "OS_Executadas": 409},
-    {"Data": "22/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 325},
-    {"Data": "22/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 434},
-    {"Data": "22/10/2026", "Base": "NET-LESTE", "OS_Executadas": 382},
-]
-
 def normalizar_nome_base(val):
     s = str(val).strip().upper()
     if "ABC" in s:
@@ -143,7 +82,7 @@ def calcular_calendario_automatico(ref_date=None):
     
     return dias_uteis_mes, max(1, dias_trab_ate_hoje), ref_date.strftime("%d/%m/%Y")
 
-# --- CONEXÃO E GESTÃO COM O GOOGLE SHEETS COM FALLBACK GARANTIDO ---
+# --- CONEXÃO E GESTÃO COM O GOOGLE SHEETS (100% DIRETO DA NUVEM) ---
 @st.cache_resource
 def get_connection():
     try:
@@ -152,7 +91,6 @@ def get_connection():
         return None
 
 def carregar_historico_sheets():
-    df_padrao = pd.DataFrame(HISTORICO_PADRAO)
     conn = get_connection()
     if conn:
         try:
@@ -165,27 +103,18 @@ def carregar_historico_sheets():
                     df["Base"] = df["Base"].apply(normalizar_nome_base)
                     df["OS_Executadas"] = pd.to_numeric(df["OS_Executadas"], errors="coerce").fillna(0).astype(int)
                     df = df[df["OS_Executadas"] > 0]
-                    if not df.empty:
-                        # Combina o padrão com o Sheets (mantendo os dados do Sheets caso existam)
-                        df_combinado = pd.concat([df_padrao, df], ignore_index=True)
-                        df_combinado = df_combinado.drop_duplicates(subset=["Data", "Base"], keep="last")
-                        return df_combinado
+                    return df
         except Exception:
             pass
-    return df_padrao
+    return pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
 
 def salvar_historico_sheets(data_str, base, os_exec):
     conn = get_connection()
     base_norm = normalizar_nome_base(base)
-    df_hist = carregar_historico_sheets()
-    
-    # Se a data já está no histórico padrão (até 22/10) com valor consolidado maior, não sobrescreve com parcial menor
-    ja_existe = df_hist[(df_hist["Data"] == str(data_str)) & (df_hist["Base"] == base_norm)]
-    if not ja_existe.empty and ja_existe.iloc[0]["OS_Executadas"] > os_exec:
-        return
-
     if conn and os_exec > 0:
         try:
+            df_hist = carregar_historico_sheets()
+            # Remove registo anterior do mesmo dia/base para atualizar com o valor correto
             df_hist = df_hist[~((df_hist["Data"] == str(data_str)) & (df_hist["Base"] == base_norm))]
             nova_linha = pd.DataFrame([{"Data": str(data_str), "Base": base_norm, "OS_Executadas": int(os_exec)}])
             df_atualizado = pd.concat([df_hist, nova_linha], ignore_index=True)
@@ -198,10 +127,9 @@ def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_h
     df_hist = carregar_historico_sheets()
     df_b = df_hist[df_hist["Base"] == base_norm].copy()
     
-    # Se temos uma data nova que ainda não está no histórico (ex: 23/10 em diante) e tem OS executada
     if data_hoje_str and os_hoje and os_hoje > 0:
         if not (df_b["Data"] == str(data_hoje_str)).any():
-            nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_hoje)}])
+            nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_exec)}])
             df_b = pd.concat([df_b, nova], ignore_index=True)
 
     if not df_b.empty:
@@ -879,7 +807,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     montados_val = st.number_input(f"Total Montados ({b_label})", value=d.get("montados", 0), key=f"inp_mon_{b_proj}")
                     parados_val = st.number_input(f"Total Parados ({b_label})", value=d.get("parados", 0), key=f"inp_par_{b_proj}")
                 
-                # 3. Meta O.S. Mês | Projeção O.S.
+                # 3. Meta O.S. Mês | Projeção O.S. (Lendo direto do Sheets)
                 with c2:
                     meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b_proj}")
                     
@@ -901,7 +829,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
                 # 5. Hoje Consultivo (Total do Dia) | Total O.S. do Consultivo
                 with c4:
-                    hoje_cons_val = st.number_input(f"Hoje Consultivo (Total do Dia) ({b_label})", value=d.get("hoje_cons", 12), key=f"inp_hoje_c_{b_proj}")
+                    hoje_cons_val = st.number_input(f"Hoje Consultivo (Total do Dia) ({b_label})", value=hoje_cons_temp, key=f"inp_hoje_c_{b_proj}")
                     os_consult_val = hoje_cons_val * 2
                     st.markdown(f"**Total O.S. do Consultivo:**\n### {os_consult_val}")
 
@@ -926,7 +854,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         )
 
 # ==============================================================================
-# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (PROJEÇÃO CORRETA E BLOCOS SEPARADOS)
+# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (PROJEÇÃO DINÂMICA DO SHEETS)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
@@ -1074,7 +1002,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
-            # Grava no Google Sheets e calcula projeção com base no histórico completo
+            # Grava no Google Sheets e puxa a projeção atualizada diretamente da nuvem
             salvar_historico_sheets(data_formatada, b_proj, res_b["produtivo"])
             proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
             
