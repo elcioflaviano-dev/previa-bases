@@ -268,6 +268,7 @@ BAIXAS_DICT = {
     "106 - CLIENTE AUSENTE": "IMPRODUTIVA",
     "107 - ENTRADA NAO AUTORIZADA": "IMPRODUTIVA",
     "108 - Realizar Obra Civil ou alteracao rede eletrica": "IMPRODUTIVA",
+    "110 - PROBLEMA NAVIGATION": "IMPRODUTIVA",
     "110 - PROBLEMA NA TUBULACAO": "IMPRODUTIVA",
     "112 - SEM ACESSO AO DG / SOTAO / COMODO": "IMPRODUTIVA",
     "113 - Sem TV / Computador Na Residencia/ Celular": "IMPRODUTIVA",
@@ -933,9 +934,11 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             
             proj_dia = prod_count + (aberta_count * efic)
             
-            # --- CORREÇÃO PONTOS: SOMA PURA DA COLUNA PONTOS PREV. APENAS DAS PRODUTIVAS ---
-            pontos_total = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
-            pontos = int(round(pontos_total, 0))
+            # --- FÓRMULA EXATA DOS PONTOS PROJETADOS: Produtivas + (Em Aberto * Eficiência) ---
+            pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
+            pontos_abert = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
+            pontos_proj = pontos_prod + (pontos_abert * efic)
+            pontos = int(round(pontos_proj, 0))
 
             media_os = (prod_count / montados) if montados > 0 else 0.0
             
