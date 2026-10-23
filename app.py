@@ -1058,7 +1058,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
             # --- CÁLCULO EXATO DA COLUNA O.S SEM CONSULT: O.S. Exec. (proj_dia) - O.S. do Consultivo (os_consult_b) ---
-            os_sem_consult_val = int(round(res_b["proj_dia"] - os_consult_b, 0))
+            os_sem_consult_val = int(round(res_b["proj_dia"] - (hoje_c_b * 2), 0))
             res_b["os_sem_c"] = os_sem_consult_val
 
             adicionar_historico_dia(data_formatada, b_proj, res_b["produtivo"])
@@ -1283,10 +1283,3 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 file_name="Planilha_Tratada_Aniel.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-
-<FollowUp>
-Com este ajuste na coluna **O.S Sem Consult** subtraindo as O.S. Executadas pelo Consultivo, os valores bateram exatamente com `270`, `320`, `214` e `804` no total?
-</FollowUp>
-  <ElicitationItem>Sim, agora a coluna O.S Sem Consult bateu perfeitamente com a minha planilha</ElicitationItem>
-  <ElicitationItem>Quero verificar mais algum ajuste</ElicitationItem>
-</ElicitationsGroup>
