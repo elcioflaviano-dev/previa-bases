@@ -104,15 +104,18 @@ def salvar_historico_sheets(data_str, base, os_exec):
             pass
 
 def obter_media_acumulada_sheets(base, os_exec_hoje, dias_trabalhados):
-    df_hist = carregar_historico_sheets()
-    if not df_hist.empty:
-        df_base = df_hist[df_hist["Base"] == base]
-        if not df_base.empty:
-            tot_exec = pd.to_numeric(df_base["OS_Executadas"], errors="coerce").fillna(0).sum()
-            data_atual = str(st.session_state.get("data_formatada", ""))
-            if not ((df_base["Data"].astype(str) == data_atual).any()):
-                tot_exec += os_exec_hoje
-            return tot_exec / max(1, dias_trabalhados)
+    conn = get_connection()
+    if conn:
+        try:
+            df_hist = conn.read(worksheet="Historico_OS", ttl=0)
+            if df_hist is not None and not df_hist.empty and "Base" in df_hist.columns and "OS_Executadas" in df_hist.columns:
+                # Normaliza o nome da base para garantir o match (ex: NET-ABCDM)
+                df_base = df_hist[df_hist["Base"].astype(str).str.upper() == base.upper()]
+                if not df_base.empty:
+                    tot_exec = pd.to_numeric(df_base["OS_Executadas"], errors="coerce").fillna(0).sum()
+                    return tot_exec / max(1, dias_trabalhados)
+        except Exception:
+            pass
     return float(os_exec_hoje)
 
 # --- INICIALIZAÇÃO DE ESTADO E NAVEGAÇÃO ---
