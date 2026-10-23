@@ -732,7 +732,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (NOVA ORDEM DE MENU SOLICITADA)
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (ORDEM ATUALIZADA)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -768,7 +768,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                           "sup_montados": {"ALAN DE ANDRADE DIAS": 26, "ELISANGELA CASSIMIRO GONCALVES": 11, "FRANCISCO GERALDO CARVALHO JUNIOR": 26, "JOAO CARLOS FERREIRA MIRON": 17}}
         }
 
-     tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
+        tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
         for i, item in enumerate(bases_config):
             b_label = item["label"]
             b_proj = item["projeto"]
@@ -777,12 +777,12 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 
                 c1, c2, c3, c4 = st.columns(4)
                 
-                # 1. Total de Montados e 2. Total de Parados
+                # 1. Total Montados | 2. Total Parados
                 with c1:
                     montados_val = st.number_input(f"Total Montados ({b_label})", value=d.get("montados", 0), key=f"inp_mon_{b_proj}")
                     parados_val = st.number_input(f"Total Parados ({b_label})", value=d.get("parados", 0), key=f"inp_par_{b_proj}")
                 
-                # 3. Meta O.S. Mês e Projeção de O.S. (Tratada de forma segura)
+                # 3. Meta O.S. Mês | Projeção O.S.
                 with c2:
                     meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b_proj}")
                     
@@ -799,7 +799,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         
                     st.markdown(f"**Projeção de O.S. (Mês):**\n### {proj_os_val:,}")
 
-                # 4. Meta do Consultivo (Automático = Montados * 8) e Projeção do Consultivo
+                # 4. Meta Consultivo (Automático = Montados * 8) | Projeção Consultivo
                 with c3:
                     meta_cons_auto = int(montados_val * 8)
                     st.markdown(f"**Meta do Consultivo (Automático):**\n### {meta_cons_auto}")
@@ -809,7 +809,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     proj_cons_val = int(round((hoje_cons_temp / max(1, dias_t_seguro)) * dias_u_seguro, 0))
                     st.markdown(f"**Projeção do Consultivo:**\n### {proj_cons_val}")
 
-                # 5. Hoje Consultivo (Total do dia) e Total O.S. do Consultivo
+                # 5. Hoje Consultivo (Total do Dia) | Total O.S. do Consultivo
                 with c4:
                     hoje_cons_val = st.number_input(f"Hoje Consultivo (Total do Dia) ({b_label})", value=hoje_cons_temp, key=f"inp_hoje_c_{b_proj}")
                     os_consult_val = hoje_cons_val * 2
@@ -988,7 +988,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             
             salvar_historico_sheets(data_formatada, b_proj, res_b["produtivo"])
             
-            # Projeção correta: Média diária acumulada * Dias úteis do mês (27 dias)
             media_acum_b = obter_media_acumulada_sheets(b_proj, res_b["produtivo"], dias_trab)
             proj_os_b = int(round(media_acum_b * dias_uteis))
             
