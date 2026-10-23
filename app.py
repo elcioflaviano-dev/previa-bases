@@ -484,7 +484,7 @@ DESC_OS_DICT = {
     "ENTREGA DE CONTROLE REMOTO VOZ": "SERVIÇOS",
     "LIMPEZA DE RUIDO INDOOR": "SERVIÇOS",
     "MANUTENCAO RETORNO COP": "SERVIÇOS",
-    "INSTALACAO CABO DE REDE STREAMING": "INSTALAÇÃO",
+    "INSTALACAO CABO DE REDE STREAMING": "SERVIÇOS",
     "MANUTENCAO PREVENTIVA INDOOR": "SERVIÇOS",
     "INSTALACAO WIFI 360": "SERVIÇOS",
     "TROCA DE EQUIPAMENTO HD": "SERVIÇOS",
@@ -582,10 +582,9 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                                 df_aniel.at[idx, "ST2"] = str(match.get("Motivo de Fechamento Externo", "")).replace("nan", "").strip()
                                 df_aniel.at[idx, "ST3"] = str(match.get("Cód de Baixa 1", "")).replace("nan", "").strip()
                                 df_aniel.at[idx, "PME"] = str(match.get("Categorias da Capacidade", "")).replace("nan", "").strip()
-                                # Preenche também a Cidade para a regra do Apoio São Paulo
                                 df_aniel.at[idx, "Cidade"] = str(match.get("Cidade", "")).replace("nan", "").strip()
 
-                    # Regra solicitada: Se o projeto for ABCDM e a cidade for SAO PAULO, altera o supervisor para APOIO SÃO PAULO
+                    # Regra: Se o projeto for ABCDM e a Cidade for SAO PAULO, altera o supervisor para APOIO SÃO PAULO
                     if "Projeto" in df_aniel.columns and "Cidade" in df_aniel.columns and "Supervisor" in df_aniel.columns:
                         mask_apoio = (
                             (df_aniel["Projeto"].astype(str).str.upper().str.contains("ABCDM")) &
@@ -733,7 +732,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (CONSULTIVO AUTOMÁTICO = MONTADOS * 8)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -758,13 +757,13 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         st.session_state["data_formatada"] = data_formatada
 
         defaults = {
-            "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "meta_cons": 552, "hoje_cons": 12, "ganho_os": 27,
+            "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "hoje_cons": 12, "ganho_os": 27,
                           "sup_parados": {"EDSON MARCO PINHEIRO": 3, "MAICON APARECIDO FARIA": 1, "NELSON ALVES OLIVEIRA JUNIOR": 0, "APOIO SÃO PAULO": 0},
                           "sup_montados": {"EDSON MARCO PINHEIRO": 23, "MAICON APARECIDO FARIA": 22, "NELSON ALVES OLIVEIRA JUNIOR": 23, "APOIO SÃO PAULO": 0}},
-            "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "meta_cons": 608, "hoje_cons": 19, "ganho_os": 40,
+            "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "hoje_cons": 19, "ganho_os": 40,
                               "sup_parados": {"ADRIANO NASCIMENTO DA SILVA": 0, "DANIELE BARBOSA DE OLIVEIRA": 3, "FERNANDO CESAR COELHO RAMOS": 2, "PALOMA REGINA SILVA BATISTA": 1},
                               "sup_montados": {"ADRIANO NASCIMENTO DA SILVA": 20, "DANIELE BARBOSA DE OLIVEIRA": 20, "FERNANDO CESAR COELHO RAMOS": 19, "PALOMA REGINA SILVA BATISTA": 19}},
-            "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "meta_cons": 656, "hoje_cons": 39, "ganho_os": 42,
+            "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "hoje_cons": 39, "ganho_os": 42,
                           "sup_parados": {"ALAN DE ANDRADE DIAS": 2, "ELISANGELA CASSIMIRO GONCALVES": 0, "FRANCISCO GERALDO CARVALHO JUNIOR": 0, "JOAO CARLOS FERREIRA MIRON": 3},
                           "sup_montados": {"ALAN DE ANDRADE DIAS": 26, "ELISANGELA CASSIMIRO GONCALVES": 11, "FRANCISCO GERALDO CARVALHO JUNIOR": 26, "JOAO CARLOS FERREIRA MIRON": 17}}
         }
@@ -778,12 +777,15 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
                     st.number_input(f"Total Parados ({b_label})", value=d.get("parados", 0), key=f"inp_par_{b_proj}")
-                    st.number_input(f"Total Montados ({b_label})", value=d.get("montados", 0), key=f"inp_mon_{b_proj}")
+                    montados_val = st.number_input(f"Total Montados ({b_label})", value=d.get("montados", 0), key=f"inp_mon_{b_proj}")
                 with c2:
                     st.number_input(f"Meta O.S. Mês ({b_label})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b_proj}")
                     st.number_input(f"Ganho O.S. ({b_label})", value=d.get("ganho_os", 0), key=f"inp_ganho_{b_proj}")
                 with c3:
-                    st.number_input(f"Meta Consultivo ({b_label})", value=d.get("meta_cons", 0), key=f"inp_meta_c_{b_proj}")
+                    # Consultivo Automático = Montados * 8
+                    meta_cons_auto = int(montados_val * 8)
+                    st.markdown(f"**Meta Consultivo (Automático):**\n### {meta_cons_auto}")
+                    st.session_state[f"inp_meta_c_{b_proj}"] = meta_cons_auto
                 with c4:
                     st.number_input(f"Hoje Consultivo ({b_label})", value=d.get("hoje_cons", 0), key=f"inp_hoje_c_{b_proj}")
                 
@@ -807,7 +809,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         )
 
 # ==============================================================================
-# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (TABELA ÚNICA + BLOCOS SEPARADOS POR BASE)
+# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (PROJEÇÃO CORRETA E BLOCOS SEPARADOS)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
@@ -825,12 +827,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             "ADESAO - INSTALACAO DE ASSINATURA",
             "ADESAO - INSTALACAO DE ASSINATURA DIGITAL"
         ]
-
-        soma_hist_fallback = {
-            "NET-ABCDM": 5865,
-            "NET-Guarulhos": 6356,
-            "NET-LESTE": 6079
-        }
 
         def calcular_metricas(df_sub, montados, hoje_c):
             tot_os = len(df_sub)
@@ -954,19 +950,21 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             p_base = st.session_state.get(f"inp_par_{b_proj}", 4 if "ABCDM" in b_proj else (6 if "Guarulhos" in b_proj else 5))
             m_base = st.session_state.get(f"inp_mon_{b_proj}", 68 if "ABCDM" in b_proj else (76 if "Guarulhos" in b_proj else 80))
             meta_os_b = st.session_state.get(f"inp_meta_os_{b_proj}", 11800 if "ABCDM" in b_proj else 12200)
-            meta_c_b = st.session_state.get(f"inp_meta_c_{b_proj}", 552 if "ABCDM" in b_proj else (608 if "Guarulhos" in b_proj else 656))
+            
+            # Consultivo Automático = Montados * 8
+            meta_c_b = int(m_base * 8)
+            
             hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 12 if "ABCDM" in b_proj else (19 if "Guarulhos" in b_proj else 39))
             ganho_b = st.session_state.get(f"inp_ganho_{b_proj}", 27 if "ABCDM" in b_proj else (40 if "Guarulhos" in b_proj else 42))
 
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
             salvar_historico_sheets(data_formatada, b_proj, res_b["produtivo"])
-            media_acum_b = obter_media_acumulada_sheets(b_proj, res_b["produtivo"], dias_trab)
             
-            if media_acum_b <= res_b["produtivo"]:
-                media_acum_b = (soma_hist_fallback.get(b_proj, 0) + res_b["produtivo"]) / max(1, dias_trab)
-                
+            # Projeção correta: (Média Acumulada do dia) * Dias Úteis Totais do Mês (27 dias)
+            media_acum_b = obter_media_acumulada_sheets(b_proj, res_b["produtivo"], dias_trab)
             proj_os_b = int(round(media_acum_b * dias_uteis))
+            
             proj_c_b = int(round((hoje_c_b / dias_trab) * dias_uteis)) if dias_trab > 0 else 0
             os_consult_b = hoje_c_b * 2
 
@@ -1073,7 +1071,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             f'<td>{g_q_gpon:.1f}%</td>'
             f'<td>{g_mig}</td>'
             f'<td>{g_q_mig:.1f}%</td>'
-            f'<td>{g_pme_canc}</td>'
+            f'<td>{g_mig_canc}</td>'
             f'<td>{g_retorno}</td>'
             f'<td>{g_pme}</td>'
             f'<td>{g_q_pme:.1f}%</td>'
@@ -1086,7 +1084,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         st.markdown("".join(tabela_html), unsafe_allow_html=True)
         st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
-        # --- BLOCOS INDEPENDENTES POR BASE (CADA BASE COM SUA PRÓPRIA TABELA COMPLETA E EXPANDER) ---
+        # --- BLOCOS INDEPENDENTES POR BASE (COM EXPANDER LIMPO) ---
         st.markdown("### 🏢 Detalhamento Operacional Separado por Base")
 
         for item in bases_config:
