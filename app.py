@@ -847,6 +847,8 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b_proj}")
                     
                     df_b_temp = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()]
+                    if "Tipo de Serviço" in df_b_temp.columns:
+                        df_b_temp = df_b_temp[~df_b_temp["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
                     prod_hoje_temp = len(df_b_temp[df_b_temp["Tipo de OS"] == "PRODUTIVA"])
                     proj_os_val, media_d, qtd_d = calcular_projecao_os_base(b_proj, dias_uteis_auto, prod_hoje_temp, data_formatada)
                     
@@ -914,17 +916,27 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 df_sub = df_sub[~df_sub["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)].copy()
 
             tot_os = len(df_sub)
-            os_aberta = len(df_sub[df_sub["Tipo de OS"] == "EM ABERTO"])
-            produtivo = len(df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"])
-            quebra_geral = len(df_sub[df_sub["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])])
             
-            den_geral = quebra_geral + produtivo
-            pct_quebra_geral = (quebra_geral / den_geral) if den_geral > 0 else 0.0
-            efic = max(0.0, 1.0 - pct_quebra_geral)
-            proj_dia = produtivo + (os_aberta * efic)
+            # Contagens exatas por Tipo de OS (Dinâmica Excel: Quebra = Improdutiva / (Improdutiva + Produtiva))
+            df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"]
+            df_improd = df_sub[df_sub["Tipo de OS"] == "IMPRODUTIVA"]
+            df_aberto = df_sub[df_sub["Tipo de OS"] == "EM ABERTO"]
+            df_canc = df_sub[df_sub["Tipo de OS"] == "CANCELADO"]
+            df_saiu = df_sub[df_sub["Tipo de OS"] == "SAIU DO TOA"]
+
+            prod_count = len(df_prod)
+            improd_count = len(df_improd)
+            aberta_count = len(df_aberto)
             
-            # --- CÁLCULO EXATO DA PROJEÇÃO DE PONTOS USANDO A FÓRMULA SOLICITADA ---
-            def calcular_pontos_sub(df_subset):
+            den_quebra = improd_count + prod_count
+            quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
+            efic = max(0.0, 1.0 - quebra_pct)
+            
+            # Fórmula exata da Projeção de O.S. (PROJ): Produtiva + (Em Aberto * Eficiência)
+            proj_dia = prod_count + (aberta_count * efic)
+            
+            # Cálculo de Pontos: Soma dos pontos das Produtivas + (Soma dos pontos das Em Aberto * Eficiência)
+            def calcular_pontos_lote(df_subset):
                 p_tot = 0.0
                 pontos_norm = {limpar_texto(k): float(v) for k, v in PONTOS_DICT.items()}
                 for _, r_os in df_subset.iterrows():
@@ -942,27 +954,23 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                     p_tot += p_val
                 return p_tot
 
-            df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"]
-            df_aberto = df_sub[df_sub["Tipo de OS"] == "EM ABERTO"]
-            
-            pontos_prod = calcular_pontos_sub(df_prod)
-            pontos_abert = calcular_pontos_sub(df_aberto)
-            
-            # Projeção de pontos: Produtivas + (Em Aberto * Eficiência)
+            pontos_prod = calcular_pontos_lote(df_prod)
+            pontos_abert = calcular_pontos_lote(df_aberto)
             pontos_proj = pontos_prod + (pontos_abert * efic)
             pontos = int(round(pontos_proj, 0))
 
-            media_os = (produtivo / montados) if montados > 0 else 0.0
+            media_os = (prod_count / montados) if montados > 0 else 0.0
             
-            os_sem_c = max(0, produtivo - hoje_c)
-            os_canc = len(df_sub[df_sub["CANCELADAS"] == "CANCELADO"])
-            saiu_toa = len(df_sub[df_sub["Tipo de OS"] == "SAIU DO TOA"])
+            os_sem_c = max(0, prod_count - hoje_c)
+            os_canc = len(df_canc)
+            saiu_toa = len(df_saiu)
+            os_aberta = aberta_count
 
             def calc_q(df_item):
-                q = len(df_item[df_item["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])])
-                p = len(df_item[df_item["Tipo de OS"] == "PRODUTIVA"])
-                d = q + p
-                return (q / d * 100) if d > 0 else 0.0
+                p_c = len(df_item[df_item["Tipo de OS"] == "PRODUTIVA"])
+                i_c = len(df_item[df_item["Tipo de OS"] == "IMPRODUTIVA"])
+                d_c = i_c + p_c
+                return (i_c / d_c * 100) if d_c > 0 else 0.0
 
             df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"]
             df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"]
@@ -975,8 +983,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_pme = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))]
 
             return {
-                "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": produtivo,
-                "quebra_geral": quebra_geral, "pontos": pontos,
+                "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
+                "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_sem_c": os_sem_c, "q_ins": calc_q(df_ins), "q_serv": calc_q(df_serv),
                 "tot_nd": len(df_nd), "q_nd": calc_q(df_nd), "os_canc": os_canc, "saiu_toa": saiu_toa,
@@ -984,14 +992,14 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "q_mig": calc_q(df_mig), "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]),
                 "retorno_wo": len(df_ret), "tot_pme": len(df_pme), "q_pme": calc_q(df_pme),
                 "canc_pme": len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"]),
-                "_raw_q_ins": len(df_ins[df_ins["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
-                "_raw_tot_ins": len(df_ins),
-                "_raw_q_serv": len(df_serv[df_serv["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
-                "_raw_tot_serv": len(df_serv),
-                "_raw_q_nd": len(df_nd[df_nd["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
-                "_raw_q_gpon": len(df_gpon[df_gpon["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
-                "_raw_q_mig": len(df_mig[df_mig["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])]),
-                "_raw_q_pme": len(df_pme[df_pme["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])])
+                "_raw_q_ins": len(df_ins[df_ins["Tipo de OS"] == "IMPRODUTIVA"]),
+                "_raw_tot_ins": len(df_ins[df_ins["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]),
+                "_raw_q_serv": len(df_serv[df_serv["Tipo de OS"] == "IMPRODUTIVA"]),
+                "_raw_tot_serv": len(df_serv[df_serv["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]),
+                "_raw_q_nd": len(df_nd[df_nd["Tipo de OS"] == "IMPRODUTIVA"]),
+                "_raw_q_gpon": len(df_gpon[df_gpon["Tipo de OS"] == "IMPRODUTIVA"]),
+                "_raw_q_mig": len(df_mig[df_mig["Tipo de OS"] == "IMPRODUTIVA"]),
+                "_raw_q_pme": len(df_pme[df_pme["Tipo de OS"] == "IMPRODUTIVA"])
             }
 
         def gerar_cabecalho_html():
@@ -1060,6 +1068,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             b_proj = item["projeto"]
             
             df_b = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()]
+            if "Tipo de Serviço" in df_b.columns:
+                df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
+            
             p_base = st.session_state.get(f"inp_par_{b_proj}", 4 if "ABCDM" in b_proj else (6 if "Guarulhos" in b_proj else 5))
             m_base = st.session_state.get(f"inp_mon_{b_proj}", 68 if "ABCDM" in b_proj else (76 if "Guarulhos" in b_proj else 80))
             meta_os_b = st.session_state.get(f"inp_meta_os_{b_proj}", 11800 if "ABCDM" in b_proj else 12200)
@@ -1124,7 +1135,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 f'<td>{res["q_ins"]:.1f}%</td>'
                 f'<td>{res["q_serv"]:.1f}%</td>'
                 f'<td>{res["q_nd"]:.1f}%</td>'
-                f'<td>{res["tot_nd"]}</td>'
                 f'<td>{res["os_canc"]}</td>'
                 f'<td>{res["saiu_toa"]}</td>'
                 f'<td>{m["ganho"]}</td>'
@@ -1140,8 +1150,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 f'</tr>'
             )
 
-        g_den_geral = g_quebra + g_prod
-        g_efic = (max(0.0, 1.0 - (g_quebra / g_den_geral)) * 100) if g_den_geral > 0 else 0.0
+        # Totais consolidados gerais
+        g_den_quebra = g_quebra + g_prod
+        g_efic = (max(0.0, 1.0 - (g_quebra / g_den_quebra)) * 100) if g_den_quebra > 0 else 0.0
         g_media_os = (g_prod / g_montados) if g_montados > 0 else 0.0
         g_q_ins = (g_raw_ins_q / g_raw_ins_tot * 100) if g_raw_ins_tot > 0 else 0.0
         g_q_serv = (g_raw_serv_q / g_raw_serv_tot * 100) if g_raw_serv_tot > 0 else 0.0
@@ -1171,7 +1182,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             f'<td>{g_q_ins:.1f}%</td>'
             f'<td>{g_q_serv:.1f}%</td>'
             f'<td>{g_q_nd:.1f}%</td>'
-            f'<td>{g_nd}</td>'
             f'<td>{g_canc}</td>'
             f'<td>{g_saiu_toa}</td>'
             f'<td>{g_ganho}</td>'
@@ -1203,6 +1213,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             
             with st.expander(f"📂 Base: {b_label} (Clique para Expandir/Recolher Detalhamento)"):
                 df_b = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()]
+                if "Tipo de Serviço" in df_b.columns:
+                    df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
                 sups_b = st.session_state.supervisores_por_base.get(b_proj, [])
                 
                 tabela_bloco_html = [
@@ -1227,7 +1239,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                     f'<td>{res_b["q_ins"]:.1f}%</td>'
                     f'<td>{res_b["q_serv"]:.1f}%</td>'
                     f'<td>{res_b["q_nd"]:.1f}%</td>'
-                    f'<td>{res_b["tot_nd"]}</td>'
                     f'<td>{res_b["os_canc"]}</td>'
                     f'<td>{res_b["saiu_toa"]}</td>'
                     f'<td>{m["ganho"]}</td>'
