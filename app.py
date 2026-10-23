@@ -840,7 +840,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             
             proj_dia = prod_count + (aberta_count * efic)
             
-            # --- CORREÇÃO PONTOS: SOMA PURA DA COLUNA PONTOS PREV. APENAS DAS PRODUTIVAS ---
+            # --- CORREÇÃO PONTOS: SOMA APENAS DAS PRODUTIVAS (COLUNA PONTOS PREV.) ---
             pontos_total = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
             pontos = int(round(pontos_total, 0))
 
