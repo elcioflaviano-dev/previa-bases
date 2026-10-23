@@ -768,7 +768,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                           "sup_montados": {"ALAN DE ANDRADE DIAS": 26, "ELISANGELA CASSIMIRO GONCALVES": 11, "FRANCISCO GERALDO CARVALHO JUNIOR": 26, "JOAO CARLOS FERREIRA MIRON": 17}}
         }
 
-        tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
+     tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
         for i, item in enumerate(bases_config):
             b_label = item["label"]
             b_proj = item["projeto"]
@@ -782,13 +782,21 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     montados_val = st.number_input(f"Total Montados ({b_label})", value=d.get("montados", 0), key=f"inp_mon_{b_proj}")
                     parados_val = st.number_input(f"Total Parados ({b_label})", value=d.get("parados", 0), key=f"inp_par_{b_proj}")
                 
-                # 3. Meta O.S. Mês e Projeção de O.S.
+                # 3. Meta O.S. Mês e Projeção de O.S. (Tratada de forma segura)
                 with c2:
                     meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b_proj}")
-                    df_b_temp = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()] if df_valido is not None else pd.DataFrame()
-                    prod_temp = len(df_b_temp[df_b_temp["Tipo de OS"] == "PRODUTIVA"])
-                    media_temp = obter_media_acumulada_sheets(b_proj, prod_temp, dias_trab_auto)
-                    proj_os_val = int(round(media_temp * dias_uteis_auto, 0))
+                    
+                    dias_t_seguro = st.session_state.get("dias_trab_auto", 17)
+                    dias_u_seguro = st.session_state.get("dias_uteis_auto", 27)
+                    
+                    if st.session_state.df_valido is not None:
+                        df_b_temp = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()]
+                        prod_temp = len(df_b_temp[df_b_temp["Tipo de OS"] == "PRODUTIVA"])
+                        media_temp = obter_media_acumulada_sheets(b_proj, prod_temp, dias_t_seguro)
+                        proj_os_val = int(round(media_temp * dias_u_seguro, 0))
+                    else:
+                        proj_os_val = 0
+                        
                     st.markdown(f"**Projeção de O.S. (Mês):**\n### {proj_os_val:,}")
 
                 # 4. Meta do Consultivo (Automático = Montados * 8) e Projeção do Consultivo
@@ -798,7 +806,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.session_state[f"inp_meta_c_{b_proj}"] = meta_cons_auto
 
                     hoje_cons_temp = d.get("hoje_cons", 12)
-                    proj_cons_val = int(round((hoje_cons_temp / dias_trab_auto) * dias_uteis_auto, 0)) if dias_trab_auto > 0 else 0
+                    proj_cons_val = int(round((hoje_cons_temp / max(1, dias_t_seguro)) * dias_u_seguro, 0))
                     st.markdown(f"**Projeção do Consultivo:**\n### {proj_cons_val}")
 
                 # 5. Hoje Consultivo (Total do dia) e Total O.S. do Consultivo
