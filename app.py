@@ -931,17 +931,14 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
             efic = max(0.0, 1.0 - quebra_pct)
             
-            # --- FÓRMULA EXATA DE O.S. EXEC. (PROJ): Produtiva + (Em Aberto * Eficiência) ---
-            proj_os_exec = prod_count + (aberta_count * efic)
-            proj_dia = int(round(proj_os_exec, 0))
-
+            proj_dia = prod_count + (aberta_count * efic)
+            
             # --- PONTOS: SOMA PURA DA COLUNA PONTOS PREV. APENAS DAS PRODUTIVAS ---
             pontos_total = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
             pontos = int(round(pontos_total, 0))
 
             media_os = (prod_count / montados) if montados > 0 else 0.0
             
-            os_sem_c = max(0, prod_count - hoje_c)
             os_canc = len(df_canc)
             saiu_toa = len(df_saiu)
             os_aberta = aberta_count
@@ -966,8 +963,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
-                "os_sem_c": os_sem_c, "q_ins": calc_q(df_ins), "q_serv": calc_q(df_serv),
-                "tot_nd": len(df_nd), "q_nd": calc_q(df_nd), "os_canc": os_canc, "saiu_toa": saiu_toa,
+                "os_canc": os_canc, "saiu_toa": saiu_toa,
                 "tot_gpon": len(df_gpon), "q_gpon": calc_q(df_gpon), "tot_mig": len(df_mig),
                 "q_mig": calc_q(df_mig), "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]),
                 "retorno_wo": len(df_ret), "tot_pme": len(df_pme), "q_pme": calc_q(df_pme),
@@ -1061,6 +1057,10 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
+            # --- CÁLCULO EXATO DA COLUNA O.S SEM CONSULT: O.S. Exec. (proj_dia) - O.S. do Consultivo (os_consult_b) ---
+            os_sem_consult_val = int(round(res_b["proj_dia"] - os_consult_b, 0))
+            res_b["os_sem_c"] = os_sem_consult_val
+
             adicionar_historico_dia(data_formatada, b_proj, res_b["produtivo"])
             proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
             
@@ -1134,6 +1134,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         g_efic = (max(0.0, 1.0 - (g_quebra / g_den_quebra)) * 100) if g_den_quebra > 0 else 0.0
         g_media_os = (g_prod / g_montados) if g_montados > 0 else 0.0
         g_proj_exec_total = int(round(g_prod + (g_aberta * (g_efic / 100.0)), 0))
+        g_os_sem_c_total = g_proj_exec_total - g_os_cons
         g_q_ins = (g_raw_ins_q / g_raw_ins_tot * 100) if g_raw_ins_tot > 0 else 0.0
         g_q_serv = (g_raw_serv_q / g_raw_serv_tot * 100) if g_raw_serv_tot > 0 else 0.0
         g_q_nd = (g_raw_nd_q / g_nd * 100) if g_nd > 0 else 0.0
@@ -1158,7 +1159,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             f'<td>{g_efic:.1f}%</td>'
             f'<td class="col-destaque-azul">{g_media_os:.1f}</td>'
             f'<td>{g_proj_exec_total}</td>'
-            f'<td class="col-destaque-amarelo">{g_sem_cons}</td>'
+            f'<td class="col-destaque-amarelo">{g_os_sem_c_total}</td>'
             f'<td>{g_q_ins:.1f}%</td>'
             f'<td>{g_q_serv:.1f}%</td>'
             f'<td>{g_q_nd:.1f}%</td>'
@@ -1274,7 +1275,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         if st.session_state.df_aniel_full is not None:
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                st.session_state.df_aniel_full.to_excel(writer, sheet_name="BASE_TRATADA", index=False)
+                st.session_state.df_aniel_full.to_excel(output, index=False)
             
             st.download_button(
                 label="📥 Baixar Planilha ANIEL Tratada (.xlsx)",
@@ -1282,3 +1283,12 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 file_name="Planilha_Tratada_Aniel.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+
+<FollowUp>
+Com este ajuste na coluna **O.S Sem Consult** subtraindo as O.S. Executadas pelo Consultivo, os valores bateram exatamente com `270`, `320`, `214` e `804` no total?
+</FollowUp>
+
+<ElicitationsGroup>
+  <ElicitationItem>Sim, agora a coluna O.S Sem Consult bateu perfeitamente com a minha planilha</ElicitationItem>
+  <ElicitationItem>Quero verificar mais algum ajuste</ElicitationItem>
+</ElicitationsGroup>
