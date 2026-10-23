@@ -128,7 +128,6 @@ def normalizar_nome_base(val):
         return "NET-LESTE"
     return s
 
-# --- CÁLCULO AUTOMÁTICO DE DIAS ÚTEIS (SEG A SÁB - EXCLUI DOMINGOS) ---
 def calcular_calendario_automatico(ref_date=None):
     if ref_date is None:
         ref_date = datetime.now()
@@ -142,7 +141,6 @@ def calcular_calendario_automatico(ref_date=None):
     
     return dias_uteis_mes, max(1, dias_trab_ate_hoje), ref_date.strftime("%d/%m/%Y")
 
-# --- GESTÃO DE HISTÓRICO EM MEMÓRIA E SESSÃO ---
 def obter_df_historico():
     if "df_historico_custom" not in st.session_state:
         st.session_state["df_historico_custom"] = pd.DataFrame(HISTORICO_OUTUBRO)
@@ -152,7 +150,6 @@ def adicionar_historico_dia(data_str, base, os_exec):
     df_hist = obter_df_historico()
     base_norm = normalizar_nome_base(base)
     if os_exec > 0:
-        # Remove registo prévio do mesmo dia/base e adiciona o novo atualizado
         df_hist = df_hist[~((df_hist["Data"] == str(data_str)) & (df_hist["Base"] == base_norm))]
         nova_linha = pd.DataFrame([{"Data": str(data_str), "Base": base_norm, "OS_Executadas": int(os_exec)}])
         st.session_state["df_historico_custom"] = pd.concat([df_hist, nova_linha], ignore_index=True)
@@ -164,7 +161,7 @@ def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_h
     
     if data_hoje_str and os_hoje is not None and os_hoje > 0:
         if df_b.empty or not (df_b["Data"].astype(str) == str(data_hoje_str)).any():
-            nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_exec)} if 'os_exec' in locals() else {"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_hoje)}])
+            nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_hoje)}])
             df_b = pd.concat([df_b, nova], ignore_index=True)
         else:
             df_b.loc[df_b["Data"].astype(str) == str(data_hoje_str), "OS_Executadas"] = int(os_hoje)
@@ -926,30 +923,35 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             efic = max(0.0, 1.0 - pct_quebra_geral)
             proj_dia = produtivo + (os_aberta * efic)
             
-            # --- CÁLCULO EXATO DOS PONTOS USANDO O DICIONÁRIO ---
-            df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"].copy()
-            pontos_total = 0.0
-            
-            # Mapeia cada tipo de serviço normalizado para o dicionário de pontos
-            pontos_norm = {limpar_texto(k): float(v) for k, v in PONTOS_DICT.items()}
-            
-            for _, r_os in df_prod.iterrows():
-                ts_raw = limpar_texto(r_os.get("Tipo de Serviço", ""))
-                p_val = 0.0
-                if ts_raw in pontos_norm:
-                    p_val = pontos_norm[ts_raw]
-                else:
-                    for kp, vp in pontos_norm.items():
-                        if ts_raw != "" and (ts_raw in kp or kp in ts_raw):
-                            p_val = vp
-                            break
-                # Se não encontrar no dicionário, pega o valor da coluna Pontos Prev. se existir
-                if p_val == 0.0:
-                    p_val = float(r_os.get("Pontos Prev.", 0.0) or 0.0)
-                
-                pontos_total += p_val
+            # --- CÁLCULO EXATO DA PROJEÇÃO DE PONTOS USANDO A FÓRMULA SOLICITADA ---
+            def calcular_pontos_sub(df_subset):
+                p_tot = 0.0
+                pontos_norm = {limpar_texto(k): float(v) for k, v in PONTOS_DICT.items()}
+                for _, r_os in df_subset.iterrows():
+                    ts_raw = limpar_texto(r_os.get("Tipo de Serviço", ""))
+                    p_val = 0.0
+                    if ts_raw in pontos_norm:
+                        p_val = pontos_norm[ts_raw]
+                    else:
+                        for kp, vp in pontos_norm.items():
+                            if ts_raw != "" and (ts_raw in kp or kp in ts_raw):
+                                p_val = vp
+                                break
+                    if p_val == 0.0:
+                        p_val = float(r_os.get("Pontos Prev.", 0.0) or 0.0)
+                    p_tot += p_val
+                return p_tot
 
-            pontos = int(round(pontos_total, 0))
+            df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"]
+            df_aberto = df_sub[df_sub["Tipo de OS"] == "EM ABERTO"]
+            
+            pontos_prod = calcular_pontos_sub(df_prod)
+            pontos_abert = calcular_pontos_sub(df_aberto)
+            
+            # Projeção de pontos: Produtivas + (Em Aberto * Eficiência)
+            pontos_proj = pontos_prod + (pontos_abert * efic)
+            pontos = int(round(pontos_proj, 0))
+
             media_os = (produtivo / montados) if montados > 0 else 0.0
             
             os_sem_c = max(0, produtivo - hoje_c)
@@ -974,7 +976,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
             return {
                 "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": produtivo,
-                "quebra_geral": quebra_geral, "pontos": int(round(pontos, 0)),
+                "quebra_geral": quebra_geral, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_sem_c": os_sem_c, "q_ins": calc_q(df_ins), "q_serv": calc_q(df_serv),
                 "tot_nd": len(df_nd), "q_nd": calc_q(df_nd), "os_canc": os_canc, "saiu_toa": saiu_toa,
@@ -1068,7 +1070,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
-            # Adiciona o dia atual ao histórico em memória
             adicionar_historico_dia(data_formatada, b_proj, res_b["produtivo"])
             proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
             
