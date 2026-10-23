@@ -770,19 +770,27 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     montados_val = st.number_input(f"Total Montados ({b_label})", value=d.get("montados", 0), key=f"inp_mon_{b_proj}")
                     parados_val = st.number_input(f"Total Parados ({b_label})", value=d.get("parados", 0), key=f"inp_par_{b_proj}")
                 
-                # 3. Meta O.S. Mês | Projeção O.S.
+              # 3. Meta O.S. Mês | Projeção O.S. (Lendo direto do Sheets)
                 with c2:
                     meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b_proj}")
                     
+                    dias_t_seguro = st.session_state.get("dias_trab_auto", 19)
+                    dias_u_seguro = st.session_state.get("dias_uteis_auto", 27)
+                    
+                    # Puxa o histórico diretamente do Google Sheets para calcular a projeção no Passo 2
                     df_hist_full = carregar_historico_sheets()
                     soma_temp = 0
+                    dias_reg = dias_t_seguro
+                    
                     if not df_hist_full.empty:
                         df_b_hist = df_hist_full[df_hist_full["Base"].astype(str).str.upper() == b_proj.upper()]
                         if not df_b_hist.empty:
                             soma_temp = pd.to_numeric(df_b_hist["OS_Executadas"], errors="coerce").fillna(0).sum()
+                            dias_reg = max(1, df_b_hist["Data"].nunique())
                     
-                    media_temp = soma_temp / max(1, dias_trab_auto)
-                    proj_os_val = int(round(media_temp * dias_uteis_auto, 0))
+                    media_temp = soma_temp / dias_reg
+                    proj_os_val = int(round(media_temp * dias_u_seguro, 0))
+                    
                     st.markdown(f"**Projeção de O.S. (Mês):**\n### {proj_os_val:,}")
 
                 # 4. Meta Consultivo (Automático = Montados * 8) | Projeção Consultivo
