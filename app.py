@@ -912,6 +912,10 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         ]
 
         def calcular_metricas(df_sub, montados, hoje_c):
+            # Filtra para remover os registros de Retorno de Credenciada dos cálculos de produtividade
+            if "Tipo de Serviço" in df_sub.columns:
+                df_sub = df_sub[~df_sub["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)].copy()
+
             tot_os = len(df_sub)
             os_aberta = len(df_sub[df_sub["Tipo de OS"] == "EM ABERTO"])
             produtivo = len(df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"])
@@ -927,6 +931,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             os_sem_c = max(0, produtivo - hoje_c)
             os_canc = len(df_sub[df_sub["CANCELADAS"] == "CANCELADO"])
             saiu_toa = len(df_sub[df_sub["Tipo de OS"] == "SAIU DO TOA"])
+            # ... restante da função continua igual ...
 
             def calc_q(df_item):
                 q = len(df_item[df_item["Tipo de OS"].isin(["IMPRODUTIVA", "CANCELADO"])])
