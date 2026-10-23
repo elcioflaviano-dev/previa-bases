@@ -12,6 +12,21 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- FUNÇÃO DE FORMATAÇÃO PADRÃO BRASILEIRO ---
+def fmt_br(val, decimais=0):
+    try:
+        if pd.isna(val):
+            val = 0.0
+        if decimais > 0:
+            s = f"{float(val):,.{decimais}f}"
+            # Substitui ponto por vírgula nos decimais e vírgula por ponto nos milhares
+            s = s.replace(",", "X").replace(".", ",").replace("X", ".")
+            return s
+        else:
+            return f"{int(round(float(val), 0)):,}".replace(",", ".")
+    except Exception:
+        return str(val)
+
 # --- CSS DE ESTILIZAÇÃO PROFISSIONAL EXECUTIVA ---
 st.markdown("""
 <style>
@@ -524,7 +539,7 @@ DESC_OS_DICT = {
     "VISITA TECNICA - VOIP": "SERVIÇOS",
     "DESOBSTRUCAO - INSTALACAO PONTO ADICIONAL": "SERVIÇOS",
     "REINSTALACAO ENTREGA STREAMING": "SERVIÇOS",
-    "REINSTALACAO - SERVICO CONEXAO ADICIONAL": "SERVIÇOS",
+    "REINSTALACAO - SERVIÇO CONEXAO ADICIONAL": "SERVIÇOS",
     "BASE ENTREGA ADC STREAMING": "SERVIÇOS",
     "INSTALAR CABEAMENTO MESH": "INSTALAÇÃO",
     "REINSTALACAO ENTREGA ADC STREAMING": "SERVIÇOS",
@@ -852,23 +867,23 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     prod_hoje_temp = len(df_b_temp[df_b_temp["Tipo de OS"] == "PRODUTIVA"])
                     proj_os_val, media_d, qtd_d = calcular_projecao_os_base(b_proj, dias_uteis_auto, prod_hoje_temp, data_formatada)
                     
-                    st.markdown(f"**Projeção de O.S. (Mês):**\n### {proj_os_val:,}\n*(Média: {media_d:.0f}/dia em {qtd_d} dias)*")
+                    st.markdown(f"**Projeção de O.S. (Mês):**\n### {fmt_br(proj_os_val)}\n*(Média: {fmt_br(media_d, 0)}/dia em {qtd_d} dias)*")
 
                 # 4. Meta Consultivo (Automático = Montados * 8) | Projeção Consultivo
                 with c3:
                     meta_cons_auto = int(montados_val * 8)
-                    st.markdown(f"**Meta do Consultivo (Automático):**\n### {meta_cons_auto}")
+                    st.markdown(f"**Meta do Consultivo (Automático):**\n### {fmt_br(meta_cons_auto)}")
                     st.session_state[f"inp_meta_c_{b_proj}"] = meta_cons_auto
 
                     hoje_cons_temp = st.session_state.get(f"inp_hoje_c_{b_proj}", d.get("hoje_cons", 12))
                     proj_cons_val = int(round((hoje_cons_temp / max(1, dias_trab_auto)) * dias_uteis_auto, 0))
-                    st.markdown(f"**Projeção do Consultivo:**\n### {proj_cons_val}")
+                    st.markdown(f"**Projeção do Consultivo:**\n### {fmt_br(proj_cons_val)}")
 
                 # 5. Hoje Consultivo (Total do Dia) | Total O.S. do Consultivo
                 with c4:
                     hoje_cons_val = st.number_input(f"Hoje Consultivo (Total do Dia) ({b_label})", value=hoje_cons_temp, key=f"inp_hoje_c_{b_proj}")
                     os_consult_val = hoje_cons_val * 2
-                    st.markdown(f"**Total O.S. do Consultivo:**\n### {os_consult_val}")
+                    st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
 
                 st.markdown("---")
                 st.markdown(f"##### 👥 Equipa de Supervisores (Montados e Parados):")
@@ -911,7 +926,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         ]
 
         def calcular_metricas(df_sub, montados, hoje_c):
-            # Filtra para remover os registros de Retorno de Credenciada
             if "Tipo de Serviço" in df_sub.columns:
                 df_sub = df_sub[~df_sub["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)].copy()
 
@@ -931,9 +945,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
             efic = max(0.0, 1.0 - quebra_pct)
             
-            proj_dia = prod_count + (aberta_count * efic)
+            proj_os_exec = prod_count + (aberta_count * efic)
+            proj_dia = int(round(proj_os_exec, 0))
             
-            # PONTOS: Soma pura da coluna Pontos Prev. apenas das produtivas
             pontos_total = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
             pontos = int(round(pontos_total, 0))
 
@@ -963,14 +977,13 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
-                "os_sem_c": 0, "q_ins": calc_q(df_ins), "q_serv": calc_q(df_serv),
-                "tot_nd": len(df_nd), "q_nd": calc_q(df_nd),
                 "os_canc": os_canc, "saiu_toa": saiu_toa,
                 "tot_gpon": len(df_gpon), "q_gpon": calc_q(df_gpon),
                 "tot_mig": len(df_mig), "q_mig": calc_q(df_mig),
                 "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]),
                 "retorno_wo": len(df_ret), "tot_pme": len(df_pme), "q_pme": calc_q(df_pme),
                 "canc_pme": len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"]),
+                "tot_nd": len(df_nd), "q_nd": calc_q(df_nd),
                 "_raw_q_ins": len(df_ins[df_ins["Tipo de OS"] == "IMPRODUTIVA"]),
                 "_raw_tot_ins": len(df_ins[df_ins["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]),
                 "_raw_q_serv": len(df_serv[df_serv["Tipo de OS"] == "IMPRODUTIVA"]),
@@ -1060,7 +1073,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
-            # --- CÁLCULO EXATO DA COLUNA O.S SEM CONSULT: O.S. Exec. (proj_dia) - O.S. do Consultivo (os_consult_b) ---
             os_sem_consult_val = int(round(res_b["proj_dia"] - (hoje_c_b * 2), 0))
             res_b["os_sem_c"] = os_sem_consult_val
 
@@ -1100,36 +1112,36 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             tabela_html.append(
                 f'<tr class="tr-base">'
                 f'<td style="text-align: left; padding-left: 8px;">{b_label}</td>'
-                f'<td>{m["p_base"]}</td>'
-                f'<td class="col-destaque-amarelo">{m["m_base"]}</td>'
-                f'<td>{m["meta_os"]:,.0f}</td>'
-                f'<td class="red-text">{m["proj_os"]:,.0f}</td>'
-                f'<td>{m["meta_c"]}</td>'
-                f'<td class="red-text">{m["proj_c"]}</td>'
-                f'<td>{m["hoje_c"]}</td>'
-                f'<td>{m["os_consult"]}</td>'
-                f'<td>{res["tot_os"]}</td>'
-                f'<td>{res["os_aberta"]}</td>'
-                f'<td>{res["pontos"]}</td>'
-                f'<td>{res["efic"]:.1f}%</td>'
-                f'<td class="col-destaque-azul">{res["media_os"]:.1f}</td>'
-                f'<td>{res["proj_dia"]}</td>'
-                f'<td class="col-destaque-amarelo">{res["os_sem_c"]}</td>'
-                f'<td>{res["q_ins"]:.1f}%</td>'
-                f'<td>{res["q_serv"]:.1f}%</td>'
-                f'<td>{res["q_nd"]:.1f}%</td>'
-                f'<td>{res["os_canc"]}</td>'
-                f'<td>{res["saiu_toa"]}</td>'
-                f'<td>{m["ganho"]}</td>'
-                f'<td>{res["tot_gpon"]}</td>'
-                f'<td>{res["q_gpon"]:.1f}%</td>'
-                f'<td>{res["tot_mig"]}</td>'
-                f'<td>{res["q_mig"]:.1f}%</td>'
-                f'<td>{res["canc_mig"]}</td>'
-                f'<td>{res["retorno_wo"]}</td>'
-                f'<td>{res["tot_pme"]}</td>'
-                f'<td>{res["q_pme"]:.1f}%</td>'
-                f'<td>{res["canc_pme"]}</td>'
+                f'<td>{fmt_br(m["p_base"])}</td>'
+                f'<td class="col-destaque-amarelo">{fmt_br(m["m_base"])}</td>'
+                f'<td>{fmt_br(m["meta_os"])}</td>'
+                f'<td class="red-text">{fmt_br(m["proj_os"])}</td>'
+                f'<td>{fmt_br(m["meta_c"])}</td>'
+                f'<td class="red-text">{fmt_br(m["proj_c"])}</td>'
+                f'<td>{fmt_br(m["hoje_c"])}</td>'
+                f'<td>{fmt_br(m["os_consult"])}</td>'
+                f'<td>{fmt_br(res["tot_os"])}</td>'
+                f'<td>{fmt_br(res["os_aberta"])}</td>'
+                f'<td>{fmt_br(res["pontos"])}</td>'
+                f'<td>{fmt_br(res["efic"], 1)}%</td>'
+                f'<td class="col-destaque-azul">{fmt_br(res["media_os"], 2)}</td>'
+                f'<td>{fmt_br(res["proj_dia"])}</td>'
+                f'<td class="col-destaque-amarelo">{fmt_br(res["os_sem_c"])}</td>'
+                f'<td>{fmt_br(res["q_ins"], 1)}%</td>'
+                f'<td>{fmt_br(res["q_serv"], 1)}%</td>'
+                f'<td>{fmt_br(res["q_nd"], 1)}%</td>'
+                f'<td>{fmt_br(res["os_canc"])}</td>'
+                f'<td>{fmt_br(res["saiu_toa"])}</td>'
+                f'<td>{fmt_br(m["ganho"])}</td>'
+                f'<td>{fmt_br(res["tot_gpon"])}</td>'
+                f'<td>{fmt_br(res["q_gpon"], 1)}%</td>'
+                f'<td>{fmt_br(res["tot_mig"])}</td>'
+                f'<td>{fmt_br(res["q_mig"], 1)}%</td>'
+                f'<td>{fmt_br(res["canc_mig"])}</td>'
+                f'<td>{fmt_br(res["retorno_wo"])}</td>'
+                f'<td>{fmt_br(res["tot_pme"])}</td>'
+                f'<td>{fmt_br(res["q_pme"], 1)}%</td>'
+                f'<td>{fmt_br(res["canc_pme"])}</td>'
                 f'</tr>'
             )
 
@@ -1148,36 +1160,36 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         tabela_html.append(
             f'<tr class="tr-total">'
             f'<td style="text-align: left; padding-left: 8px;">TOTAL INSTALAÇÃO</td>'
-            f'<td>{g_parados}</td>'
-            f'<td class="col-destaque-amarelo">{g_montados}</td>'
-            f'<td>{g_meta_os:,.0f}</td>'
-            f'<td class="red-text">{g_proj_os:,.0f}</td>'
-            f'<td>{g_meta_cons}</td>'
-            f'<td class="red-text">{g_proj_cons}</td>'
-            f'<td>{g_hoje_cons}</td>'
-            f'<td>{g_os_cons}</td>'
-            f'<td>{g_tot_os}</td>'
-            f'<td>{g_aberta}</td>'
-            f'<td>{g_pontos}</td>'
-            f'<td>{g_efic:.1f}%</td>'
-            f'<td class="col-destaque-azul">{g_media_os:.1f}</td>'
-            f'<td>{g_proj_exec_total}</td>'
-            f'<td class="col-destaque-amarelo">{g_os_sem_c_total}</td>'
-            f'<td>{g_q_ins:.1f}%</td>'
-            f'<td>{g_q_serv:.1f}%</td>'
-            f'<td>{g_q_nd:.1f}%</td>'
-            f'<td>{g_canc}</td>'
-            f'<td>{g_saiu_toa}</td>'
-            f'<td>{g_ganho}</td>'
-            f'<td>{g_gpon}</td>'
-            f'<td>{g_q_gpon:.1f}%</td>'
-            f'<td>{g_mig}</td>'
-            f'<td>{g_q_mig:.1f}%</td>'
-            f'<td>{g_mig_canc}</td>'
-            f'<td>{g_retorno}</td>'
-            f'<td>{g_pme}</td>'
-            f'<td>{g_q_pme:.1f}%</td>'
-            f'<td>{g_pme_canc}</td>'
+            f'<td>{fmt_br(g_parados)}</td>'
+            f'<td class="col-destaque-amarelo">{fmt_br(g_montados)}</td>'
+            f'<td>{fmt_br(g_meta_os)}</td>'
+            f'<td class="red-text">{fmt_br(g_proj_os)}</td>'
+            f'<td>{fmt_br(g_meta_cons)}</td>'
+            f'<td class="red-text">{fmt_br(g_proj_cons)}</td>'
+            f'<td>{fmt_br(g_hoje_cons)}</td>'
+            f'<td>{fmt_br(g_os_cons)}</td>'
+            f'<td>{fmt_br(g_tot_os)}</td>'
+            f'<td>{fmt_br(g_aberta)}</td>'
+            f'<td>{fmt_br(g_pontos)}</td>'
+            f'<td>{fmt_br(g_efic, 1)}%</td>'
+            f'<td class="col-destaque-azul">{fmt_br(g_media_os, 2)}</td>'
+            f'<td>{fmt_br(g_proj_exec_total)}</td>'
+            f'<td class="col-destaque-amarelo">{fmt_br(g_os_sem_c_total)}</td>'
+            f'<td>{fmt_br(g_q_ins, 1)}%</td>'
+            f'<td>{fmt_br(g_q_serv, 1)}%</td>'
+            f'<td>{fmt_br(g_q_nd, 1)}%</td>'
+            f'<td>{fmt_br(g_canc)}</td>'
+            f'<td>{fmt_br(g_saiu_toa)}</td>'
+            f'<td>{fmt_br(g_ganho)}</td>'
+            f'<td>{fmt_br(g_gpon)}</td>'
+            f'<td>{fmt_br(g_q_gpon, 1)}%</td>'
+            f'<td>{fmt_br(g_mig)}</td>'
+            f'<td>{fmt_br(g_q_mig, 1)}%</td>'
+            f'<td>{fmt_br(g_mig_canc)}</td>'
+            f'<td>{fmt_br(g_retorno)}</td>'
+            f'<td>{fmt_br(g_pme)}</td>'
+            f'<td>{fmt_br(g_q_pme, 1)}%</td>'
+            f'<td>{fmt_br(g_pme_canc)}</td>'
             f'</tr>'
             f'</tbody>'
             f'</table>'
@@ -1205,36 +1217,36 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                     gerar_cabecalho_html(),
                     f'<tr class="tr-base">'
                     f'<td style="text-align: left; padding-left: 8px;">{b_label}</td>'
-                    f'<td>{m["p_base"]}</td>'
-                    f'<td class="col-destaque-amarelo">{m["m_base"]}</td>'
-                    f'<td>{m["meta_os"]:,.0f}</td>'
-                    f'<td class="red-text">{m["proj_os"]:,.0f}</td>'
-                    f'<td>{m["meta_c"]}</td>'
-                    f'<td class="red-text">{m["proj_c"]}</td>'
-                    f'<td>{m["hoje_c"]}</td>'
-                    f'<td>{m["os_consult"]}</td>'
-                    f'<td>{res_b["tot_os"]}</td>'
-                    f'<td>{res_b["os_aberta"]}</td>'
-                    f'<td>{res_b["pontos"]}</td>'
-                    f'<td>{res_b["efic"]:.1f}%</td>'
-                    f'<td class="col-destaque-azul">{res_b["media_os"]:.1f}</td>'
-                    f'<td>{res_b["proj_dia"]}</td>'
-                    f'<td class="col-destaque-amarelo">{res_b["os_sem_c"]}</td>'
-                    f'<td>{res_b["q_ins"]:.1f}%</td>'
-                    f'<td>{res_b["q_serv"]:.1f}%</td>'
-                    f'<td>{res_b["q_nd"]:.1f}%</td>'
-                    f'<td>{res_b["os_canc"]}</td>'
-                    f'<td>{res_b["saiu_toa"]}</td>'
-                    f'<td>{m["ganho"]}</td>'
-                    f'<td>{res_b["tot_gpon"]}</td>'
-                    f'<td>{res_b["q_gpon"]:.1f}%</td>'
-                    f'<td>{res_b["tot_mig"]}</td>'
-                    f'<td>{res_b["q_mig"]:.1f}%</td>'
-                    f'<td>{res_b["canc_mig"]}</td>'
-                    f'<td>{res_b["retorno_wo"]}</td>'
-                    f'<td>{res_b["tot_pme"]}</td>'
-                    f'<td>{res_b["q_pme"]:.1f}%</td>'
-                    f'<td>{res_b["canc_pme"]}</td>'
+                    f'<td>{fmt_br(m["p_base"])}</td>'
+                    f'<td class="col-destaque-amarelo">{fmt_br(m["m_base"])}</td>'
+                    f'<td>{fmt_br(m["meta_os"])}</td>'
+                    f'<td class="red-text">{fmt_br(m["proj_os"])}</td>'
+                    f'<td>{fmt_br(m["meta_c"])}</td>'
+                    f'<td class="red-text">{fmt_br(m["proj_c"])}</td>'
+                    f'<td>{fmt_br(m["hoje_c"])}</td>'
+                    f'<td>{fmt_br(m["os_consult"])}</td>'
+                    f'<td>{fmt_br(res_b["tot_os"])}</td>'
+                    f'<td>{fmt_br(res_b["os_aberta"])}</td>'
+                    f'<td>{fmt_br(res_b["pontos"])}</td>'
+                    f'<td>{fmt_br(res_b["efic"], 1)}%</td>'
+                    f'<td class="col-destaque-azul">{fmt_br(res_b["media_os"], 2)}</td>'
+                    f'<td>{fmt_br(res_b["proj_dia"])}</td>'
+                    f'<td class="col-destaque-amarelo">{fmt_br(res_b["os_sem_c"])}</td>'
+                    f'<td>{fmt_br(res_b["q_ins"], 1)}%</td>'
+                    f'<td>{fmt_br(res_b["q_serv"], 1)}%</td>'
+                    f'<td>{fmt_br(res_b["q_nd"], 1)}%</td>'
+                    f'<td>{fmt_br(res_b["os_canc"])}</td>'
+                    f'<td>{fmt_br(res_b["saiu_toa"])}</td>'
+                    f'<td>{fmt_br(m["ganho"])}</td>'
+                    f'<td>{fmt_br(res_b["tot_gpon"])}</td>'
+                    f'<td>{fmt_br(res_b["q_gpon"], 1)}%</td>'
+                    f'<td>{fmt_br(res_b["tot_mig"])}</td>'
+                    f'<td>{fmt_br(res_b["q_mig"], 1)}%</td>'
+                    f'<td>{fmt_br(res_b["canc_mig"])}</td>'
+                    f'<td>{fmt_br(res_b["retorno_wo"])}</td>'
+                    f'<td>{fmt_br(res_b["tot_pme"])}</td>'
+                    f'<td>{fmt_br(res_b["q_pme"], 1)}%</td>'
+                    f'<td>{fmt_br(res_b["canc_pme"])}</td>'
                     f'</tr>'
                 ]
 
@@ -1248,26 +1260,26 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                     tabela_bloco_html.append(
                         f'<tr class="tr-sup">'
                         f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
-                        f'<td>{p_sup}</td>'
-                        f'<td class="col-destaque-amarelo">{m_sup}</td>'
+                        f'<td>{fmt_br(p_sup)}</td>'
+                        f'<td class="col-destaque-amarelo">{fmt_br(m_sup)}</td>'
                         f'<td></td><td></td><td></td><td></td><td></td><td></td>'
-                        f'<td>{res_s["tot_os"]}</td>'
-                        f'<td>{res_s["os_aberta"]}</td>'
-                        f'<td>{res_s["pontos"]}</td>'
-                        f'<td>{res_s["efic"]:.1f}%</td>'
-                        f'<td class="col-destaque-azul">{res_s["media_os"]:.1f}</td>'
-                        f'<td>{res_s["proj_dia"]}</td>'
+                        f'<td>{fmt_br(res_s["tot_os"])}</td>'
+                        f'<td>{fmt_br(res_s["os_aberta"])}</td>'
+                        f'<td>{fmt_br(res_s["pontos"])}</td>'
+                        f'<td>{fmt_br(res_s["efic"], 1)}%</td>'
+                        f'<td class="col-destaque-azul">{fmt_br(res_s["media_os"], 2)}</td>'
+                        f'<td>{fmt_br(res_s["proj_dia"])}</td>'
                         f'<td></td>'
-                        f'<td>{res_s["q_ins"]:.1f}%</td>'
-                        f'<td>{res_s["q_serv"]:.1f}%</td>'
-                        f'<td>{res_s["q_nd"]:.1f}%</td>'
+                        f'<td>{fmt_br(res_s["q_ins"], 1)}%</td>'
+                        f'<td>{fmt_br(res_s["q_serv"], 1)}%</td>'
+                        f'<td>{fmt_br(res_s["q_nd"], 1)}%</td>'
                         f'<td></td>'
-                        f'<td>{res_s["os_canc"]}</td>'
-                        f'<td>{res_s["saiu_toa"]}</td>'
+                        f'<td>{fmt_br(res_s["os_canc"])}</td>'
+                        f'<td>{fmt_br(res_s["saiu_toa"])}</td>'
                         f'<td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
-                        f'<td>{res_s["tot_pme"]}</td>'
-                        f'<td>{res_s["q_pme"]:.1f}%</td>'
-                        f'<td>{res_s["canc_pme"]}</td>'
+                        f'<td>{fmt_br(res_s["tot_pme"])}</td>'
+                        f'<td>{fmt_br(res_s["q_pme"], 1)}%</td>'
+                        f'<td>{fmt_br(res_s["canc_pme"])}</td>'
                         f'</tr>'
                     )
 
