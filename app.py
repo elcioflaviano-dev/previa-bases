@@ -966,7 +966,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"]
             df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"]
             
-            # --- CÁLCULO DA PROJEÇÃO ESPECÍFICA PARA A COLUNA ND ---
+            # --- CÁLCULO DA PROJEÇÃO EXATA PARA A COLUNA ND ---
             servicos_nd_alvos = [
                 "ADESAO - INSTALACAO DE ASSINATURA",
                 "ADESAO ENTREGA STREAMING",
@@ -1007,7 +1007,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "_raw_tot_ins": len(df_ins[df_ins["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]),
                 "_raw_q_serv": len(df_serv[df_serv["Tipo de OS"] == "IMPRODUTIVA"]),
                 "_raw_tot_serv": len(df_serv[df_serv["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]),
-                "_raw_q_nd": len(df_nd_base[df_nd_base["Tipo de OS"] == "IMPRODUTIVA"]),
+                "_raw_q_nd": nd_improd,
                 "_raw_q_gpon": len(df_gpon[df_gpon["Tipo de OS"] == "IMPRODUTIVA"]),
                 "_raw_q_mig": len(df_mig[df_mig["Tipo de OS"] == "IMPRODUTIVA"]),
                 "_raw_q_pme": len(df_pme[df_pme["Tipo de OS"] == "IMPRODUTIVA"])
