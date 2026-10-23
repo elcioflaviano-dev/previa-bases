@@ -13,6 +13,9 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- ID DA SUA PLANILHA NO GOOGLE SHEETS ---
+SPREADSHEET_ID = "1bF7cQaoEkj-UuKCGmJ4PThoy-CdSPlVg8i3XEB6cu58"
+
 # --- CSS DE ESTILIZAÇÃO PROFISSIONAL EXECUTIVA ---
 st.markdown("""
 <style>
@@ -94,7 +97,8 @@ def carregar_historico_sheets():
     conn = get_connection()
     if conn:
         try:
-            df = conn.read(worksheet="Historico_OS", ttl=0)
+            # Lê diretamente usando a URL ou spreadsheet gsheets
+            df = conn.read(spreadsheet=SPREADSHEET_ID, worksheet="Historico_OS", ttl=0)
             if df is not None and not df.empty:
                 df.columns = [str(c).strip() for c in df.columns]
                 if "Base" in df.columns and "OS_Executadas" in df.columns and "Data" in df.columns:
@@ -114,36 +118,28 @@ def salvar_historico_sheets(data_str, base, os_exec):
     if conn and os_exec > 0:
         try:
             df_hist = carregar_historico_sheets()
+            # Remove registo anterior do mesmo dia/base se existir
             df_hist = df_hist[~((df_hist["Data"] == str(data_str)) & (df_hist["Base"] == base_norm))]
             nova_linha = pd.DataFrame([{"Data": str(data_str), "Base": base_norm, "OS_Executadas": int(os_exec)}])
             df_atualizado = pd.concat([df_hist, nova_linha], ignore_index=True)
-            conn.update(worksheet="Historico_OS", data=df_atualizado)
-        except Exception:
-            pass
+            conn.update(spreadsheet=SPREADSHEET_ID, worksheet="Historico_OS", data=df_atualizado)
+        except Exception as e:
+            st.error(f"Erro ao salvar no Google Sheets: {e}")
 
 def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_hoje_str=None):
     base_norm = normalizar_nome_base(base_proj)
+    df_b = carregar_historico_sheets()
     
-    conn = get_connection()
-    df_b = pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
-    
-    if conn:
-        try:
-            df = conn.read(worksheet="Historico_OS", ttl=0)
-            if df is not None and not df.empty:
-                df.columns = [str(c).strip() for c in df.columns]
-                if "Base" in df.columns and "OS_Executadas" in df.columns and "Data" in df.columns:
-                    df = df.dropna(subset=["Data", "Base"]).copy()
-                    df["Base"] = df["Base"].apply(normalizar_nome_base)
-                    df["OS_Executadas"] = pd.to_numeric(df["OS_Executadas"], errors="coerce").fillna(0).astype(int)
-                    df_b = df[df["Base"] == base_norm].copy()
-        except Exception:
-            pass
+    if not df_b.empty:
+        df_b = df_b[df_b["Base"] == base_norm].copy()
 
     if data_hoje_str and os_hoje is not None and os_hoje > 0:
-        if not (df_b["Data"].astype(str) == str(data_hoje_str)).any():
+        if df_b.empty or not (df_b["Data"].astype(str) == str(data_hoje_str)).any():
             nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_hoje)}])
             df_b = pd.concat([df_b, nova], ignore_index=True)
+        else:
+            # Atualiza o valor de hoje se já estiver presente
+            df_b.loc[df_b["Data"].astype(str) == str(data_hoje_str), "OS_Executadas"] = int(os_hoje)
 
     if not df_b.empty:
         soma_total = df_b["OS_Executadas"].sum()
@@ -821,7 +817,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     montados_val = st.number_input(f"Total Montados ({b_label})", value=d.get("montados", 0), key=f"inp_mon_{b_proj}")
                     parados_val = st.number_input(f"Total Parados ({b_label})", value=d.get("parados", 0), key=f"inp_par_{b_proj}")
                 
-                # 3. Meta O.S. Mês | Projeção O.S. (Lendo todo o Sheets)
+                # 3. Meta O.S. Mês | Projeção O.S.
                 with c2:
                     meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b_proj}")
                     
@@ -868,7 +864,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         )
 
 # ==============================================================================
-# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (PROJEÇÃO CORRETA E BLOCOS SEPARADOS)
+# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (GRAVA AUTOMATICAMENTE NO SHEETS)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
@@ -1016,7 +1012,10 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
+            # GRAVA O DIA ATUAL NO GOOGLE SHEETS COM O ID EXATO
             salvar_historico_sheets(data_formatada, b_proj, res_b["produtivo"])
+            
+            # Calcula a projeção com base no Sheets atualizado
             proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
             
             proj_c_b = int(round((hoje_c_b / dias_trab) * dias_uteis)) if dias_trab > 0 else 0
