@@ -957,9 +957,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             saiu_toa = len(df_saiu)
             os_aberta = aberta_count
 
-            def calc_q(df_item):
-                p_c = len(df_item[df_item["Tipo de OS"] == "PRODUTIVA"])
+            def calc_q_sub(df_item):
                 i_c = len(df_item[df_item["Tipo de OS"] == "IMPRODUTIVA"])
+                p_c = len(df_item[df_item["Tipo de OS"] == "PRODUTIVA"])
                 d_c = i_c + p_c
                 return (i_c / d_c * 100) if d_c > 0 else 0.0
 
@@ -978,12 +978,12 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_canc": os_canc, "saiu_toa": saiu_toa,
-                "q_ins": calc_q(df_ins), "q_serv": calc_q(df_serv),
-                "tot_nd": len(df_nd), "q_nd": calc_q(df_nd),
-                "tot_gpon": len(df_gpon), "q_gpon": calc_q(df_gpon),
-                "tot_mig": len(df_mig), "q_mig": calc_q(df_mig),
+                "q_ins": calc_q_sub(df_ins), "q_serv": calc_q_sub(df_serv),
+                "tot_nd": len(df_nd), "q_nd": calc_q_sub(df_nd),
+                "tot_gpon": len(df_gpon), "q_gpon": calc_q_sub(df_gpon),
+                "tot_mig": len(df_mig), "q_mig": calc_q_sub(df_mig),
                 "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]),
-                "retorno_wo": len(df_ret), "tot_pme": len(df_pme), "q_pme": calc_q(df_pme),
+                "retorno_wo": len(df_ret), "tot_pme": len(df_pme), "q_pme": calc_q_sub(df_pme),
                 "canc_pme": len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"]),
                 "_raw_q_ins": len(df_ins[df_ins["Tipo de OS"] == "IMPRODUTIVA"]),
                 "_raw_tot_ins": len(df_ins[df_ins["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]),
