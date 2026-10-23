@@ -966,14 +966,23 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"]
             df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"]
             
-            # --- FILTRO EXATO PARA A COLUNA ND ---
+            # --- CÁLCULO DA PROJEÇÃO ESPECÍFICA PARA A COLUNA ND ---
             servicos_nd_alvos = [
                 "ADESAO - INSTALACAO DE ASSINATURA",
                 "ADESAO ENTREGA STREAMING",
                 "ADESAO - INSTALACAO DE ASSINATURA DIGITAL"
             ]
             ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip()
-            df_nd = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])]
+            df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])]
+            
+            nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"])
+            nd_improd = len(df_nd_base[df_nd_base["Tipo de OS"] == "IMPRODUTIVA"])
+            nd_aberto = len(df_nd_base[df_nd_base["Tipo de OS"] == "EM ABERTO"])
+            
+            den_nd = nd_improd + nd_prod
+            quebra_nd = (nd_improd / den_nd) if den_nd > 0 else 0.0
+            efic_nd = max(0.0, 1.0 - quebra_nd)
+            proj_nd = int(round(nd_prod + (nd_aberto * efic_nd), 0))
 
             df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"]
             df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"]
@@ -988,7 +997,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_canc": os_canc, "saiu_toa": saiu_toa,
                 "q_ins": calc_q_sub(df_ins), "q_serv": calc_q_sub(df_serv),
-                "tot_nd": len(df_nd), "q_nd": calc_q_sub(df_nd),
+                "tot_nd": proj_nd, "q_nd": calc_q_sub(df_nd_base),
                 "tot_gpon": len(df_gpon), "q_gpon": calc_q_sub(df_gpon),
                 "tot_mig": len(df_mig), "q_mig": calc_q_sub(df_mig),
                 "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]),
@@ -998,11 +1007,12 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "_raw_tot_ins": len(df_ins[df_ins["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]),
                 "_raw_q_serv": len(df_serv[df_serv["Tipo de OS"] == "IMPRODUTIVA"]),
                 "_raw_tot_serv": len(df_serv[df_serv["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]),
-                "_raw_q_nd": len(df_nd[df_nd["Tipo de OS"] == "IMPRODUTIVA"]),
+                "_raw_q_nd": len(df_nd_base[df_nd_base["Tipo de OS"] == "IMPRODUTIVA"]),
                 "_raw_q_gpon": len(df_gpon[df_gpon["Tipo de OS"] == "IMPRODUTIVA"]),
                 "_raw_q_mig": len(df_mig[df_mig["Tipo de OS"] == "IMPRODUTIVA"]),
                 "_raw_q_pme": len(df_pme[df_pme["Tipo de OS"] == "IMPRODUTIVA"])
             }
+        
         def gerar_cabecalho_html():
             return f"""
             <table class="custom-table">
