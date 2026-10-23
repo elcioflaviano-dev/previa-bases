@@ -486,7 +486,7 @@ DESC_OS_DICT = {
     "MANUTENCAO RETORNO COP": "SERVIÇOS",
     "INSTALACAO CABO DE REDE STREAMING": "INSTALAÇÃO",
     "MANUTENCAO PREVENTIVA INDOOR": "SERVIÇOS",
-    "INSTALACAO WIFI 360": "INSTALAÇÃO",
+    "INSTALACAO WIFI 360": "SERVIÇOS",
     "TROCA DE EQUIPAMENTO HD": "SERVIÇOS",
     "TROCA DE EQUIPAMENTO STREAMING": "SERVIÇOS",
     "ENTREGA EXPRESS CAMERA ADICIONAL": "SERVIÇOS",
@@ -582,6 +582,16 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                                 df_aniel.at[idx, "ST2"] = str(match.get("Motivo de Fechamento Externo", "")).replace("nan", "").strip()
                                 df_aniel.at[idx, "ST3"] = str(match.get("Cód de Baixa 1", "")).replace("nan", "").strip()
                                 df_aniel.at[idx, "PME"] = str(match.get("Categorias da Capacidade", "")).replace("nan", "").strip()
+                                # Preenche também a Cidade para a regra do Apoio São Paulo
+                                df_aniel.at[idx, "Cidade"] = str(match.get("Cidade", "")).replace("nan", "").strip()
+
+                    # Regra solicitada: Se o projeto for ABCDM e a cidade for SAO PAULO, altera o supervisor para APOIO SÃO PAULO
+                    if "Projeto" in df_aniel.columns and "Cidade" in df_aniel.columns and "Supervisor" in df_aniel.columns:
+                        mask_apoio = (
+                            (df_aniel["Projeto"].astype(str).str.upper().str.contains("ABCDM")) &
+                            (df_aniel["Cidade"].astype(str).str.upper().str.strip() == "SAO PAULO")
+                        )
+                        df_aniel.loc[mask_apoio, "Supervisor"] = "APOIO SÃO PAULO"
 
                     if "Pontos Prev." not in df_aniel.columns:
                         df_aniel["Pontos Prev."] = 0.0
@@ -749,8 +759,8 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
         defaults = {
             "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "meta_cons": 552, "hoje_cons": 12, "ganho_os": 27,
-                          "sup_parados": {"EDSON MARCO PINHEIRO": 3, "MAICON APARECIDO FARIA": 1, "NELSON ALVES OLIVEIRA JUNIOR": 0},
-                          "sup_montados": {"EDSON MARCO PINHEIRO": 23, "MAICON APARECIDO FARIA": 22, "NELSON ALVES OLIVEIRA JUNIOR": 23}},
+                          "sup_parados": {"EDSON MARCO PINHEIRO": 3, "MAICON APARECIDO FARIA": 1, "NELSON ALVES OLIVEIRA JUNIOR": 0, "APOIO SÃO PAULO": 0},
+                          "sup_montados": {"EDSON MARCO PINHEIRO": 23, "MAICON APARECIDO FARIA": 22, "NELSON ALVES OLIVEIRA JUNIOR": 23, "APOIO SÃO PAULO": 0}},
             "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "meta_cons": 608, "hoje_cons": 19, "ganho_os": 40,
                               "sup_parados": {"ADRIANO NASCIMENTO DA SILVA": 0, "DANIELE BARBOSA DE OLIVEIRA": 3, "FERNANDO CESAR COELHO RAMOS": 2, "PALOMA REGINA SILVA BATISTA": 1},
                               "sup_montados": {"ADRIANO NASCIMENTO DA SILVA": 20, "DANIELE BARBOSA DE OLIVEIRA": 20, "FERNANDO CESAR COELHO RAMOS": 19, "PALOMA REGINA SILVA BATISTA": 19}},
@@ -797,10 +807,10 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         )
 
 # ==============================================================================
-# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (BLOCOS SEPARADOS POR BASE)
+# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (TABELA ÚNICA + BLOCOS SEPARADOS POR BASE)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
-    st.subheader("📊 Passo 3: Apresentação da Prévia Diária")
+    st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
 
     if st.session_state.df_valido is None:
         st.warning("⚠️ Dados não encontrados. Complete os passos anteriores.")
@@ -978,7 +988,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "os_consult": os_consult_b, "ganho": ganho_b, "label": b_label
             }
 
-        # --- TABELA PRINCIPAL CONSOLIDADA ---
+        # --- TABELA PRINCIPAL CONSOLIDADA DA DIRETORIA ---
         tabela_html = [gerar_cabecalho_html()]
 
         for item in bases_config:
@@ -1032,7 +1042,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         g_q_nd = (g_raw_nd_q / g_nd * 100) if g_nd > 0 else 0.0
         g_q_gpon = (g_raw_gpon_q / g_gpon * 100) if g_gpon > 0 else 0.0
         g_q_mig = (g_raw_mig_q / g_mig * 100) if g_mig > 0 else 0.0
-        g_q_pme = (g_raw_pme_q / g_pme * 100) if g_raw_pme_q > 0 else 0.0
+        g_q_pme = (g_raw_pme_q / g_pme * 100) if g_pme > 0 else 0.0
 
         tabela_html.append(
             f'<tr class="tr-total">'
@@ -1076,8 +1086,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         st.markdown("".join(tabela_html), unsafe_allow_html=True)
         st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
-        # --- BLOCOS INDIVIDUAIS POR BASE (ABC EM UM BLOCO, GUARULHOS EM OUTRO, ETC.) ---
-        st.markdown("### 🏢 Detalhamento Operacional por Base e Supervisores")
+        # --- BLOCOS INDEPENDENTES POR BASE (CADA BASE COM SUA PRÓPRIA TABELA COMPLETA E EXPANDER) ---
+        st.markdown("### 🏢 Detalhamento Operacional Separado por Base")
 
         for item in bases_config:
             b_label = item["label"]
@@ -1085,7 +1095,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             m = metricas_bases[b_proj]
             res_b = m["res"]
             
-            with st.expander(f"📂 Base: {b_label} (Clique para Expandir/Recolher Supervisores)"):
+            with st.expander(f"📂 Base: {b_label} (Clique para Expandir/Recolher Detalhamento)"):
                 df_b = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()]
                 sups_b = st.session_state.supervisores_por_base.get(b_proj, [])
                 
