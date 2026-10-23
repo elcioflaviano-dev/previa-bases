@@ -128,6 +128,7 @@ def normalizar_nome_base(val):
         return "NET-LESTE"
     return s
 
+# --- CÁLCULO AUTOMÁTICO DE DIAS ÚTEIS (SEG A SÁB - EXCLUI DOMINGOS) ---
 def calcular_calendario_automatico(ref_date=None):
     if ref_date is None:
         ref_date = datetime.now()
@@ -141,6 +142,7 @@ def calcular_calendario_automatico(ref_date=None):
     
     return dias_uteis_mes, max(1, dias_trab_ate_hoje), ref_date.strftime("%d/%m/%Y")
 
+# --- GESTÃO DE HISTÓRICO EM MEMÓRIA E SESSÃO ---
 def obter_df_historico():
     if "df_historico_custom" not in st.session_state:
         st.session_state["df_historico_custom"] = pd.DataFrame(HISTORICO_OUTUBRO)
@@ -150,6 +152,7 @@ def adicionar_historico_dia(data_str, base, os_exec):
     df_hist = obter_df_historico()
     base_norm = normalizar_nome_base(base)
     if os_exec > 0:
+        # Remove registo prévio do mesmo dia/base e adiciona o novo atualizado
         df_hist = df_hist[~((df_hist["Data"] == str(data_str)) & (df_hist["Base"] == base_norm))]
         nova_linha = pd.DataFrame([{"Data": str(data_str), "Base": base_norm, "OS_Executadas": int(os_exec)}])
         st.session_state["df_historico_custom"] = pd.concat([df_hist, nova_linha], ignore_index=True)
@@ -161,7 +164,7 @@ def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_h
     
     if data_hoje_str and os_hoje is not None and os_hoje > 0:
         if df_b.empty or not (df_b["Data"].astype(str) == str(data_hoje_str)).any():
-            nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_hoje)}])
+            nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_exec)} if 'os_exec' in locals() else {"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_hoje)}])
             df_b = pd.concat([df_b, nova], ignore_index=True)
         else:
             df_b.loc[df_b["Data"].astype(str) == str(data_hoje_str), "OS_Executadas"] = int(os_hoje)
@@ -1037,6 +1040,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
             res_b = calcular_metricas(df_b, m_base, hoje_c_b)
             
+            # Adiciona o dia atual ao histórico em memória
             adicionar_historico_dia(data_formatada, b_proj, res_b["produtivo"])
             proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
             
@@ -1115,7 +1119,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         g_q_nd = (g_raw_nd_q / g_nd * 100) if g_nd > 0 else 0.0
         g_q_gpon = (g_raw_gpon_q / g_gpon * 100) if g_gpon > 0 else 0.0
         g_q_mig = (g_raw_mig_q / g_mig * 100) if g_mig > 0 else 0.0
-        g_q_pme = (g_raw_pme_q / g_pme * 100) if g_pme_q > 0 else 0.0
+        g_q_pme = (g_raw_pme_q / g_pme * 100) if g_pme > 0 else 0.0
 
         tabela_html.append(
             f'<tr class="tr-total">'
