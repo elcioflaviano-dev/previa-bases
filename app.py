@@ -368,99 +368,6 @@ BAIXAS_DICT = {
     "PENDENTE": "EM ABERTO",
 }
 
-PONTOS_DICT = {
-    "ADESAO - INSTALACAO DE ASSINATURA": 3.50,
-    "ADESAO ENTREGA STREAMING": 3.50,
-    "ADESAO - INSTALACAO DE ASSINATURA DIGITAL": 3.50,
-    "MUDANCA DE ENDERECO - INSTALAR ASSINATURA": 3.00,
-    "MUDANCA DE ENDERECO - INSTALAR ASSINATURA DIGITAL": 3.00,
-    "MUDANCA DE ENDERECO - ENTREGA STREAMING": 3.00,
-    "MUDANCA DE ENDERECO - ENTREGA ADC STREAMING": 3.00,
-    "DESOBSTRUCAO - INSTALACAO DE ASSINATURA": 3.00,
-    "ADESAO - INSTALAR PONTO VIRTUA": 2.50,
-    "INSTALAR PONTO VIRTUA": 2.50,
-    "REFAZER MANUTENCAO": 2.50,
-    "REFAZER INSTALACAO": 2.50,
-    "REFAZER MANUTENCAO PON": 2.50,
-    "REFAZER INSTALACAO DIGITAL": 2.50,
-    "MUDANCA DE PACOTE": 2.30,
-    "MUD PACOTE ENTREGA STREAMING": 2.30,
-    "MUDANCA DE PACOTE DIGITAL": 2.30,
-    "MUDANCA DE PACOTE DOWN HDD": 2.30,
-    "MUDANCA DE PACOTE RET HDD": 2.30,
-    "INSTALACAO WIFI MESH": 2.00,
-    "INSTALAR TV BASE": 2.00,
-    "REINSTALACAO - ASSINATURA": 2.00,
-    "INSTALAR CABEAMENTO MESH": 2.00,
-    "INST PONTO EXTENSAO REDE VIRTUA": 2.00,
-    "REINSTALACAO - ASSINATURA DIGITAL": 2.00,
-    "VISITA TECNICA - VIRTUA": 1.80,
-    "VISITA TECNICA DIGITAL": 1.80,
-    "VISITA TECNICA - VOIP": 1.80,
-    "VISITA TECNICA STREAMING": 1.80,
-    "VISITA TECNICA": 1.80,
-    "VISITA TECNICA - SMART HOME": 1.80,
-    "MUDANCA DE ENDERECO - INSTALAR PONTO ADICIONAL VIRTUA": 1.60,
-    "INSTALAR SERVICO CONEXAO ADICIONAL DIGITAL": 1.60,
-    "MUDANCA DE LOCAL DE PONTO": 1.60,
-    "MUDANCA DE LOCAL DE PONTO DIGITAL": 1.60,
-    "ADESAO - INSTALAR SERVICO CONEXAO ADICIONAL DIGITAL": 1.60,
-    "MUDANCA DE LOCAL DE PONTO VOIP": 1.60,
-    "TROCA DECODER PARA ATUALIZACAO DIGITAL": 1.50,
-    "TROCA DECODER PARA ATUALIZACAO DIGITAL 4K": 1.50,
-    "TROCA DE EQUIPAMENTO HD": 1.50,
-    "BASE ENTREGA STREAMING": 1.50,
-    "INSTALACAO EXTENSAO VOIP": 1.50,
-    "MODERNIZACAO EXTENSOR WIFI MESH": 1.50,
-    "TROCA EQUIPAMENTO PARA ATUALIZACAO TECNOLOGIA": 1.50,
-    "TROCA DE EQUIPAMENTO WIFI": 1.50,
-    "MODERNIZACAO EQUIPAMENTO WIFI": 1.50,
-    "TROCA DE EQUIPAMENTO STREAMING": 1.50,
-    "MODERNIZACAO EQUIPAMENTO DIGITAL": 1.50,
-    "MIGRAÇÃO GPON (adição na MP GPON)": 1.40,
-    "REINSTALACAO - PONTO ADICIONAL VIRTUA": 1.40,
-    "REINSTALACAO - SERVICO CONEXAO ADICIONAL DIGITAL": 1.40,
-    "REINSTALACAO - ASSINATURA VOIP": 1.30,
-    "REINSTALACAO ENTREGA STREAMING": 1.30,
-    "REINSTALACAO ENTREGA ADC STREAMING": 1.30,
-    "REINSTALACAO - PONTO ADICIONAL VOIP": 1.30,
-    "MUDANCA DE ENDERECO - INSTALAR PONTO VOIP": 1.20,
-    "ADESAO - INSTALAR PONTO VOIP": 1.20,
-    "INSTALAR PONTO VOIP": 1.20,
-    "MUDANCA ENDERECO - INSTALAR SERVICO CONEXAO ADIC DIG": 1.20,
-    "ADESAO - INSTALAR PONTO PORTABILIDADE": 1.20,
-    "ADESAO ENTREGA ADC STREAMING": 1.20,
-    "INSTALAR PONTO PORTABILIDADE": 1.20,
-    "BASE ENTREGA ADC STREAMING": 1.20,
-    "MUDANCA ENDERECO - INSTALAR SERVICO CONEXAO ADIC": 1.20,
-    "REINSTALACAO - SERVICO CONEXAO ADICIONAL": 1.20,
-    "ENVIO DE CHIP VIA TECNICO": 0.50,
-    "RETIRAR PONTO": 0.50,
-    "RETIRAR PONTO VOIP": 0.50,
-    "RETIRAR EQUIPAMENTO": 0.50,
-    "RETIRADA WIFI MESH": 0.50,
-    "ENTREGA DE CABOS ESPECIAIS E CONEXOES": 0.50,
-    "RETIRAR EMTA": 0.50,
-    "INSTALACAO DE CABO HFC": 0.10,
-    "INSTALACAO DE CABO GPON": 0.10,
-    "CONSTRUCAO MDU GPON": 0.00,
-    "APOIO CONSTRUCAO GPON MDU": 0.00,
-    "MANUTENCAO PREVENTIVA INDOOR I": 1.00,
-    "LIMPEZA DE RUIDO INDOOR": 1.00,
-    "SUBSTITUICAO DE CONTROLE REMOTO DIGITAL": 1.00,
-    "MODERNIZACAO BL": 1.00,
-    "RETORNO DE CREDENCIADA": 0.00,
-    "BLINDAGEM TV ATUALIZACAO DIG": 1.00,
-    "MANUTENCAO REPARO NO DROP": 1.00,
-    "VISITA TECNICA WIFI MESH": 1.00,
-    "MANUTENCAO CORRETIVA - DEGRADACAO MDU": 1.00,
-    "MANUTENCAO CORRETIVA - MDU": 1.00,
-    "MANUTENCAO CORRETIVA - MDU GPON": 1.00,
-    "ATENDIMENTO PRIORITARIO MANUTENCAO": 1.00,
-    "CONFIGURACAO STREAMING": 1.00,
-    "MUDANCA DE ENDERECO - RETIRAR PONTOS": 1.00,
-}
-
 DESC_OS_DICT = {
     "ADESAO - INSTALACAO DE ASSINATURA": "INSTALAÇÃO",
     "ADESAO - INSTALACAO DE ASSINATURA DIGITAL": "INSTALAÇÃO",
@@ -917,7 +824,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
             tot_os = len(df_sub)
             
-            # Contagens exatas por Tipo de OS (Dinâmica Excel: Quebra = Improdutiva / (Improdutiva + Produtiva))
             df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"]
             df_improd = df_sub[df_sub["Tipo de OS"] == "IMPRODUTIVA"]
             df_aberto = df_sub[df_sub["Tipo de OS"] == "EM ABERTO"]
@@ -932,32 +838,11 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
             efic = max(0.0, 1.0 - quebra_pct)
             
-            # Fórmula exata da Projeção de O.S. (PROJ): Produtiva + (Em Aberto * Eficiência)
             proj_dia = prod_count + (aberta_count * efic)
             
-            # Cálculo de Pontos: Soma dos pontos das Produtivas + (Soma dos pontos das Em Aberto * Eficiência)
-            def calcular_pontos_lote(df_subset):
-                p_tot = 0.0
-                pontos_norm = {limpar_texto(k): float(v) for k, v in PONTOS_DICT.items()}
-                for _, r_os in df_subset.iterrows():
-                    ts_raw = limpar_texto(r_os.get("Tipo de Serviço", ""))
-                    p_val = 0.0
-                    if ts_raw in pontos_norm:
-                        p_val = pontos_norm[ts_raw]
-                    else:
-                        for kp, vp in pontos_norm.items():
-                            if ts_raw != "" and (ts_raw in kp or kp in ts_raw):
-                                p_val = vp
-                                break
-                    if p_val == 0.0:
-                        p_val = float(r_os.get("Pontos Prev.", 0.0) or 0.0)
-                    p_tot += p_val
-                return p_tot
-
-            pontos_prod = calcular_pontos_lote(df_prod)
-            pontos_abert = calcular_pontos_lote(df_aberto)
-            pontos_proj = pontos_prod + (pontos_abert * efic)
-            pontos = int(round(pontos_proj, 0))
+            # --- CORREÇÃO PONTOS: SOMA PURA DA COLUNA PONTOS PREV. APENAS DAS PRODUTIVAS ---
+            pontos_total = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
+            pontos = int(round(pontos_total, 0))
 
             media_os = (prod_count / montados) if montados > 0 else 0.0
             
@@ -1150,7 +1035,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 f'</tr>'
             )
 
-        # Totais consolidados gerais
         g_den_quebra = g_quebra + g_prod
         g_efic = (max(0.0, 1.0 - (g_quebra / g_den_quebra)) * 100) if g_den_quebra > 0 else 0.0
         g_media_os = (g_prod / g_montados) if g_montados > 0 else 0.0
