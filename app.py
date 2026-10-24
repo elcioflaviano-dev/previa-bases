@@ -16,6 +16,13 @@ st.set_page_config(
 # --- URL DA PLANILHA DO GOOGLE SHEETS ---
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1bF7cQaoEkj-UuKCGmJ4PThoy-CdSPlVg8i3XEB6cu58/edit?gid=0#gid=0"
 
+# --- FUNÇÕES DE NAVEGAÇÃO ---
+def ir_para_passo_2():
+    st.session_state["pagina_atual"] = "2. Dados Operacionais por Base"
+
+def ir_para_passo_3():
+    st.session_state["pagina_atual"] = "3. Visualização da Prévia"
+
 # --- FUNÇÃO DE FORMATAÇÃO PADRÃO BRASILEIRO ---
 def fmt_br(val, decimais=0):
     try:
@@ -507,7 +514,7 @@ DESC_OS_DICT = {
     "VISITA TECNICA - VOIP": "SERVIÇOS",
     "DESOBSTRUCAO - INSTALACAO PONTO ADICIONAL": "SERVIÇOS",
     "REINSTALACAO ENTREGA STREAMING": "SERVIÇOS",
-    "REINSTALACAO - SERVICO CONEXAO ADICIONAL": "SERVIÇOS",
+    "REINSTALACAO - SERVIÇO CONEXAO ADICIONAL": "SERVIÇOS",
     "BASE ENTREGA ADC STREAMING": "SERVIÇOS",
     "INSTALAR CABEAMENTO MESH": "INSTALAÇÃO",
     "REINSTALACAO ENTREGA ADC STREAMING": "SERVIÇOS",
