@@ -965,7 +965,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
                         pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
                         
-                        # CORREÇÃO DA MÉDIA O.S.: Divisão exata do proj_dia (ou proj_os_exec) pelos montados, conforme solicitado
+                        # CORREÇÃO DA MÉDIA O.S.: Divisão exata do proj_dia (Total O.S. Exec. da prévia) pelos Montados
                         media_os = (proj_dia / montados) if montados > 0 else 0.0
 
                         def c_sub(df_item):
@@ -1117,7 +1117,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
             pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
             
-            # CORREÇÃO EXATA DA MÉDIA O.S.: Divisão exata do proj_dia (Total de O.S. Executadas da prévia) pelos Montados
+            # CORREÇÃO EXATA DA MÉDIA O.S.: Divisão exata do proj_dia (Total O.S. Exec. da prévia) pelos Montados
             media_os = (proj_dia / montados) if montados > 0 else 0.0
             
             os_canc = len(df_canc)
@@ -1339,8 +1339,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
     g_den_quebra = g_quebra + g_prod
     g_efic = (max(0.0, 1.0 - (g_quebra / g_den_quebra)) * 100) if g_den_quebra > 0 else 0.0
-    g_media_os = (g_proj_exec_total / g_montados) if g_montados > 0 else 0.0
     g_proj_exec_total = int(round(g_prod + (g_aberta * (g_efic / 100.0)), 0))
+    g_media_os = (g_proj_exec_total / g_montados) if g_montados > 0 else 0.0
     g_os_sem_c_total = g_proj_exec_total - g_os_cons
     g_q_ins = (g_raw_ins_q / g_raw_ins_tot * 100) if g_raw_ins_tot > 0 else 0.0
     g_q_serv = (g_raw_serv_q / g_raw_serv_tot * 100) if g_raw_serv_tot > 0 else 0.0
