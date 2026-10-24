@@ -166,7 +166,6 @@ st.sidebar.radio(
     key="pagina_atual"
 )
 
-# Se estivermos na página 3, adicionamos o seletor de data de forma discreta na barra lateral
 data_selecionada = None
 if st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.sidebar.markdown("---")
@@ -874,7 +873,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 
-                # 1. ATUALIZAR ABA 'Historico_OS' (Lê o que tem, remove o dia se já existir para atualizar, e grava completo)
+                # 1. ATUALIZAR ABA 'Historico_OS'
                 try:
                     df_hist_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS")
                     if df_hist_sheet is None:
@@ -899,7 +898,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS", data=df_hist_sheet)
                 st.session_state["df_historico_custom"] = df_hist_sheet
 
-                # 2. ATUALIZAR ABA 'Previas_Diarias' (Lê o que tem, remove o dia se já existir para atualizar, e grava completo)
+                # 2. ATUALIZAR ABA 'Previas_Diarias'
                 try:
                     df_previas_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
                     if df_previas_sheet is None:
@@ -962,7 +961,12 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         pme_col = df_sub["PME"].fillna("").astype(str).str.strip().str.upper() if "PME" in df_sub.columns else pd.Series()
                         df_pme = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
 
-                        servicos_nd_alvos = ["ADESAO - INSTALACAO DE ASSINATURA", "ADESAO ENTREGA STREAMING", "ADESAO - INSTALACAO DE ASSINATURA DIGITAL"]
+                        # --- Cálculo rigoroso da ND alinhado à dinâmica do Excel ---
+                        servicos_nd_alvos = [
+                            "ADESAO - INSTALACAO DE ASSINATURA",
+                            "ADESAO - INSTALACAO DE ASSINATURA DIGITAL",
+                            "ADESAO ENTREGA STREAMING"
+                        ]
                         ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
                         df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
                         nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
@@ -1098,7 +1102,11 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
             df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
             
-            servicos_nd_alvos = ["ADESAO - INSTALACAO DE ASSINATURA", "ADESAO ENTREGA STREAMING", "ADESAO - INSTALACAO DE ASSINATURA DIGITAL"]
+            servicos_nd_alvos = [
+                "ADESAO - INSTALACAO DE ASSINATURA",
+                "ADESAO - INSTALACAO DE ASSINATURA DIGITAL",
+                "ADESAO ENTREGA STREAMING"
+            ]
             ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
             df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
             
@@ -1440,7 +1448,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
     if st.session_state.get("df_aniel_full") is not None:
         try:
-            df_export = st.session_state["df_anxl_full"] if "df_anxl_full" in st.session_state else st.session_state["df_aniel_full"]
+            df_export = st.session_state["df_aniel_full"]
             if not df_export.empty:
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine="openpyxl") as writer:
