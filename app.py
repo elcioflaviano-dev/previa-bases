@@ -13,6 +13,9 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- URL DA PLANILHA DO GOOGLE SHEETS ---
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1bF7cQaoEkj-UuKCGmJ4PThoy-CdSPlVg8i3XEB6cu58/edit?gid=0#gid=0"
+
 # --- FUNÇÃO DE FORMATAÇÃO PADRÃO BRASILEIRO ---
 def fmt_br(val, decimais=0):
     try:
@@ -195,6 +198,12 @@ etapas = ["1. Upload de Arquivos", "2. Dados Operacionais por Base", "3. Visuali
 
 if "pagina_atual" not in st.session_state:
     st.session_state["pagina_atual"] = "1. Upload de Arquivos"
+
+# Verifica transição segura de estado para evitar erro de widget
+if st.session_state.get("ir_para_passo_3_ativo", False):
+    st.session_state["pagina_atual"] = "3. Visualização da Prévia"
+    st.session_state["ir_para_passo_3_ativo"] = False
+
 if "df_valido" not in st.session_state:
     st.session_state.df_valido = None
 if "df_aniel_full" not in st.session_state:
@@ -209,12 +218,6 @@ bases_config = [
     {"label": "Guarulhos", "projeto": "NET-Guarulhos"},
     {"label": "Leste", "projeto": "NET-LESTE"}
 ]
-
-def ir_para_passo_2():
-    st.session_state["pagina_atual"] = "2. Dados Operacionais por Base"
-
-def ir_para_passo_3():
-    st.session_state["pagina_atual"] = "3. Visualização da Prévia"
 
 st.sidebar.title("Navegação")
 st.sidebar.radio(
@@ -802,7 +805,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         st.button(
             "Ir para Dados Operacionais ➡️",
             type="primary",
-            on_click=ir_para_passo_2,
+            on_click=lambda: st.session_state.update({"pagina_atual": "2. Dados Operacionais por Base"}),
             key="btn_ir_dados"
         )
 
@@ -852,12 +855,10 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 
                 c1, c2, c3, c4 = st.columns(4)
                 
-                # 1. Total Montados | 2. Total Parados
                 with c1:
                     montados_val = st.number_input(f"Total Montados ({b_label})", value=d.get("montados", 0), key=f"inp_mon_{b_proj}")
                     parados_val = st.number_input(f"Total Parados ({b_label})", value=d.get("parados", 0), key=f"inp_par_{b_proj}")
                 
-                # 3. Meta O.S. Mês | Projeção O.S.
                 with c2:
                     meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=d.get("meta_os", 0), key=f"inp_meta_os_{b_proj}")
                     
@@ -869,7 +870,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     
                     st.markdown(f"**Projeção de O.S. (Mês):**\n### {fmt_br(proj_os_val)}\n*(Média: {fmt_br(media_d, 0)}/dia em {qtd_d} dias)*")
 
-                # 4. Meta Consultivo (Automático = Montados * 8) | Projeção Consultivo
                 with c3:
                     meta_cons_auto = int(montados_val * 8)
                     st.markdown(f"**Meta do Consultivo (Automático):**\n### {fmt_br(meta_cons_auto)}")
@@ -879,7 +879,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     proj_cons_val = int(round((hoje_cons_temp / max(1, dias_trab_auto)) * dias_uteis_auto, 0))
                     st.markdown(f"**Projeção do Consultivo:**\n### {fmt_br(proj_cons_val)}")
 
-                # 5. Hoje Consultivo (Total do Dia) | Total O.S. do Consultivo
                 with c4:
                     hoje_cons_val = st.number_input(f"Hoje Consultivo (Total do Dia) ({b_label})", value=hoje_cons_temp, key=f"inp_hoje_c_{b_proj}")
                     os_consult_val = hoje_cons_val * 2
@@ -899,20 +898,20 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
         st.markdown("---")
         
-       # --- BOTÃO DE SINCRONIZAÇÃO E ESCRITA DIRETA NO GOOGLE SHEETS ---
+        # --- BOTÃO DE SINCRONIZAÇÃO E ESCRITA DIRETA NO GOOGLE SHEETS ---
         if st.button("📊 Sincronizar Google Sheets e Gerar Prévia Executiva", type="primary"):
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 if st.session_state.df_aniel_full is not None:
-                    conn.update(data=st.session_state.df_aniel_full)
-                    st.success("✅ Dados sincronizados com sucesso no Google Sheets!")
+                    # Grava diretamente na planilha configurada (usando a URL definida)
+                    conn.update(spreadsheet=GOOGLE_SHEET_URL, data=st.session_state.df_aniel_full)
+                    st.success("✅ Dados sincronizados e gravados com sucesso no Google Sheets!")
                 else:
                     st.warning("⚠️ Nenhum dado processado encontrado para enviar.")
             except Exception as e:
                 st.error(f"Erro ao conectar ou escrever no Google Sheets: {e}")
             
-            # Atualiza a página e recarrega para refletir na barra lateral
-            st.session_state["pagina_atual"] = "3. Visualização da Prévia"
+            st.session_state["ir_para_passo_3_ativo"] = True
             st.rerun()
 
 # ==============================================================================
