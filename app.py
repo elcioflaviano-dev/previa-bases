@@ -999,9 +999,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     else:
         data_selecionada = st.session_state.get("data_formatada", "22/10/2026")
 
-    if st.session_state.df_valido is None:
-        st.warning("⚠️ Dados atuais do ANIEL não carregados. Exibindo estrutura baseada no histórico.")
-    
     df_valido = st.session_state.df_valido if st.session_state.df_valido is not None else obter_df_historico()
     dias_uteis = st.session_state.get("dias_uteis_auto", 27)
     dias_trab = st.session_state.get("dias_trab_auto", 19)
@@ -1014,91 +1011,100 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     ]
 
     def calcular_metricas(df_sub, montados, hoje_c):
-        if "Tipo de Serviço" in df_sub.columns:
-            df_sub = df_sub[~df_sub["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)].copy()
+        if isinstance(df_sub, pd.DataFrame) and not df_sub.empty:
+            if "Tipo de Serviço" in df_sub.columns:
+                df_sub = df_sub[~df_sub["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)].copy()
 
-        tot_os = len(df_sub)
-        
-        df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-        df_improd = df_sub[df_sub["Tipo de OS"] == "IMPRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-        df_aberto = df_sub[df_sub["Tipo de OS"] == "EM ABERTO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-        df_canc = df_sub[df_sub["Tipo de OS"] == "CANCELADO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-        df_saiu = df_sub[df_sub["Tipo de OS"] == "SAIU DO TOA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+            tot_os = len(df_sub)
+            
+            df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+            df_improd = df_sub[df_sub["Tipo de OS"] == "IMPRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+            df_aberto = df_sub[df_sub["Tipo de OS"] == "EM ABERTO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+            df_canc = df_sub[df_sub["Tipo de OS"] == "CANCELADO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+            df_saiu = df_sub[df_sub["Tipo de OS"] == "SAIU DO TOA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
 
-        prod_count = len(df_prod)
-        improd_count = len(df_improd)
-        aberta_count = len(df_aberto)
-        
-        den_quebra = improd_count + prod_count
-        quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
-        efic = max(0.0, 1.0 - quebra_pct)
-        
-        proj_os_exec = prod_count + (aberta_count * efic)
-        proj_dia = int(round(proj_os_exec, 0))
-        
-        pontos_total = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
-        pontos = int(round(pontos_total, 0))
+            prod_count = len(df_prod)
+            improd_count = len(df_improd)
+            aberta_count = len(df_aberto)
+            
+            den_quebra = improd_count + prod_count
+            quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
+            efic = max(0.0, 1.0 - quebra_pct)
+            
+            proj_os_exec = prod_count + (aberta_count * efic)
+            proj_dia = int(round(proj_os_exec, 0))
+            
+            pontos_total = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
+            pontos = int(round(pontos_total, 0))
 
-        media_os = (prod_count / montados) if montados > 0 else 0.0
-        
-        os_canc = len(df_canc)
-        saiu_toa = len(df_saiu)
-        os_aberta = aberta_count
+            media_os = (prod_count / montados) if montados > 0 else 0.0
+            
+            os_canc = len(df_canc)
+            saiu_toa = len(df_saiu)
+            os_aberta = aberta_count
 
-        def calc_q_sub(df_item):
-            if "Tipo de OS" not in df_item.columns: return 0.0
-            i_c = len(df_item[df_item["Tipo de OS"] == "IMPRODUTIVA"])
-            p_c = len(df_item[df_item["Tipo de OS"] == "PRODUTIVA"])
-            d_c = i_c + p_c
-            return (i_c / d_c * 100) if d_c > 0 else 0.0
+            def calc_q_sub(df_item):
+                if "Tipo de OS" not in df_item.columns: return 0.0
+                i_c = len(df_item[df_item["Tipo de OS"] == "IMPRODUTIVA"])
+                p_c = len(df_item[df_item["Tipo de OS"] == "PRODUTIVA"])
+                d_c = i_c + p_c
+                return (i_c / d_c * 100) if d_c > 0 else 0.0
 
-        df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
-        df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
-        
-        servicos_nd_alvos = [
-            "ADESAO - INSTALACAO DE ASSINATURA",
-            "ADESAO ENTREGA STREAMING",
-            "ADESAO - INSTALACAO DE ASSINATURA DIGITAL"
-        ]
-        ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
-        df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
-        
-        nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
-        nd_improd = len(df_nd_base[df_nd_base["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
-        nd_aberto = len(df_nd_base[df_nd_base["Tipo de OS"] == "EM ABERTO"]) if "Tipo de OS" in df_nd_base.columns else 0
-        
-        den_nd = nd_improd + nd_prod
-        quebra_nd = (nd_improd / den_nd) if den_nd > 0 else 0.0
-        efic_nd = max(0.0, 1.0 - quebra_nd)
-        proj_nd = int(round(nd_prod + (nd_aberto * efic_nd), 0))
+            df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
+            df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
+            
+            servicos_nd_alvos = [
+                "ADESAO - INSTALACAO DE ASSINATURA",
+                "ADESAO ENTREGA STREAMING",
+                "ADESAO - INSTALACAO DE ASSINATURA DIGITAL"
+            ]
+            ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
+            df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
+            
+            nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
+            nd_improd = len(df_nd_base[df_nd_base["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
+            nd_aberto = len(df_nd_base[df_nd_base["Tipo de OS"] == "EM ABERTO"]) if "Tipo de OS" in df_nd_base.columns else 0
+            
+            den_nd = nd_improd + nd_prod
+            quebra_nd = (nd_improd / den_nd) if den_nd > 0 else 0.0
+            efic_nd = max(0.0, 1.0 - quebra_nd)
+            proj_nd = int(round(nd_prod + (nd_aberto * efic_nd), 0))
 
-        df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
-        df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
-        df_ret = df_sub[df_sub["QUEBRAS"] == "RETORNO"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
-        
-        pme_col = df_sub["PME"].fillna("").astype(str).str.strip().str.upper() if "PME" in df_sub.columns else pd.Series()
-        df_pme = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
+            df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
+            df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
+            df_ret = df_sub[df_sub["QUEBRAS"] == "RETORNO"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
+            
+            pme_col = df_sub["PME"].fillna("").astype(str).str.strip().str.upper() if "PME" in df_sub.columns else pd.Series()
+            df_pme = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
 
+            return {
+                "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
+                "quebra_geral": improd_count, "pontos": pontos,
+                "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
+                "os_canc": os_canc, "saiu_toa": saiu_toa,
+                "q_ins": calc_q_sub(df_ins), "q_serv": calc_q_sub(df_serv),
+                "tot_nd": proj_nd, "q_nd": calc_q_sub(df_nd_base),
+                "tot_gpon": len(df_gpon), "q_gpon": calc_q_sub(df_gpon),
+                "tot_mig": len(df_mig), "q_mig": calc_q_sub(df_mig),
+                "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_mig.columns else 0,
+                "retorno_wo": len(df_ret), "tot_pme": len(df_pme), "q_pme": calc_q_sub(df_pme),
+                "canc_pme": len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_pme.columns else 0,
+                "_raw_q_ins": len(df_ins[df_ins["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_ins.columns else 0,
+                "_raw_tot_ins": len(df_ins[df_ins["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]) if "Tipo de OS" in df_ins.columns else 0,
+                "_raw_q_serv": len(df_serv[df_serv["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_serv.columns else 0,
+                "_raw_tot_serv": len(df_serv[df_serv["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]) if "Tipo de OS" in df_serv.columns else 0,
+                "_raw_q_nd": nd_improd,
+                "_raw_q_gpon": len(df_gpon[df_gpon["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_gpon.columns else 0,
+                "_raw_q_mig": len(df_mig[df_mig["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_mig.columns else 0,
+                "_raw_q_pme": len(df_pme[df_pme["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_pme.columns else 0
+            }
         return {
-            "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
-            "quebra_geral": improd_count, "pontos": pontos,
-            "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
-            "os_canc": os_canc, "saiu_toa": saiu_toa,
-            "q_ins": calc_q_sub(df_ins), "q_serv": calc_q_sub(df_serv),
-            "tot_nd": proj_nd, "q_nd": calc_q_sub(df_nd_base),
-            "tot_gpon": len(df_gpon), "q_gpon": calc_q_sub(df_gpon),
-            "tot_mig": len(df_mig), "q_mig": calc_q_sub(df_mig),
-            "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_mig.columns else 0,
-            "retorno_wo": len(df_ret), "tot_pme": len(df_pme), "q_pme": calc_q_sub(df_pme),
-            "canc_pme": len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_pme.columns else 0,
-            "_raw_q_ins": len(df_ins[df_ins["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_ins.columns else 0,
-            "_raw_tot_ins": len(df_ins[df_ins["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]) if "Tipo de OS" in df_ins.columns else 0,
-            "_raw_q_serv": len(df_serv[df_serv["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_serv.columns else 0,
-            "_raw_tot_serv": len(df_serv[df_serv["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]) if "Tipo de OS" in df_serv.columns else 0,
-            "_raw_q_nd": nd_improd,
-            "_raw_q_gpon": len(df_gpon[df_gpon["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_gpon.columns else 0,
-            "_raw_q_mig": len(df_mig[df_mig["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_mig.columns else 0,
-            "_raw_q_pme": len(df_pme[df_pme["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_pme.columns else 0
+            "tot_os": 0, "os_aberta": 0, "produtivo": 0, "quebra_geral": 0, "pontos": 0,
+            "efic": 0.0, "media_os": 0.0, "proj_dia": 0, "os_canc": 0, "saiu_toa": 0,
+            "q_ins": 0.0, "q_serv": 0.0, "tot_nd": 0, "q_nd": 0.0, "tot_gpon": 0, "q_gpon": 0.0,
+            "tot_mig": 0, "q_mig": 0.0, "canc_mig": 0, "retorno_wo": 0, "tot_pme": 0, "q_pme": 0.0,
+            "canc_pme": 0, "_raw_q_ins": 0, "_raw_tot_ins": 0, "_raw_q_serv": 0, "_raw_tot_serv": 0,
+            "_raw_q_nd": 0, "_raw_q_gpon": 0, "_raw_q_mig": 0, "_raw_q_pme": 0
         }
 
     def gerar_cabecalho_html():
@@ -1408,4 +1414,4 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
         except Exception:
-            st.info("ℹ️ Carregue ou processe os arquivos no Passo 1 para habilitar o download da planilha tratada.")
+            pass
