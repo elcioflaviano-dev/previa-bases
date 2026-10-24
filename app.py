@@ -149,7 +149,6 @@ def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_h
         
     return 0, 0.0, 1
 
-# --- FUNÇÃO PARA CARREGAR CONFIGURAÇÃO DE EQUIPE DO GOOGLE SHEETS ---
 @st.cache_data(ttl=600)
 def carregar_config_equipe():
     try:
@@ -159,7 +158,6 @@ def carregar_config_equipe():
     except Exception:
         return pd.DataFrame(columns=["Base", "Supervisor", "Montados", "Parados"])
 
-# --- LEITURA DOS DICIONÁRIOS DO GOOGLE SHEETS ---
 @st.cache_data(ttl=600)
 def carregar_dicionarios_sheets():
     try:
@@ -204,7 +202,6 @@ bases_config = [
     {"label": "Leste", "projeto": "NET-LESTE"}
 ]
 
-# --- MENU LATERAL ---
 st.sidebar.title("Navegação")
 st.sidebar.radio(
     "Ir para:",
@@ -280,11 +277,11 @@ def limpar_texto(val):
     return re.sub(r"\s+", " ", s)
 
 # ==============================================================================
-# PÁGINA 1: UPLOAD DE ARQUIVOS
+# PÁGINA 1: UPLOAD DE ARQUIVOS COM TRAVA DE DATA (ANIEL vs TOA)
 # ==============================================================================
 if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     st.subheader("📁 Passo 1: Upload e Cruzamento das Bases")
-    st.write("Carregue o ficheiro do ANIEL e os ficheiros do TOA para processar o dia.")
+    st.write("Carregue o ficheiro do ANIEL e os ficheiros do TOA para processar o dia. (Será feita a validação de compatibilidade de datas).")
     
     col_u1, col_u2 = st.columns(2)
     with col_u1:
@@ -294,18 +291,27 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         
     if up_aniel is not None:
         if st.button("🚀 Processar Arquivos e Cruzar Bases", type="primary"):
-            with st.spinner("Processando cruzamento e tratando dados..."):
+            with st.spinner("Validando datas e processando cruzamento..."):
                 try:
                     df_aniel = ler_arquivo_seguro(up_aniel)
                     df_aniel.columns = [str(c).strip() for c in df_aniel.columns]
 
-                    col_proj = next((c for c in df_aniel.columns if c.lower() == "projeto"), "Projeto")
+                    # Extrair data do ANIEL se houver coluna de data/agendamento
+                    data_aniel_str = ""
+                    col_data_aniel = next((c for c in df_aniel.columns if "data" in c.lower() or "agendamento" in c.lower()), None)
+                    if col_data_aniel:
+                        datas_a = pd.to_datetime(df_aniel[col_data_aniel], dayfirst=True, errors='coerce').dropna()
+                        if not datas_a.empty:
+                            data_aniel_str = datas_a.iloc[0].strftime("%d/%m/%Y")
+
+                    df_proj = next((c for c in df_aniel.columns if c.lower() == "projeto"), "Projeto")
                     if col_proj in df_aniel.columns:
                         df_aniel = df_aniel[
                             ~df_aniel[col_proj].astype(str).str.upper().str.contains(r"\bVT\b|VT", regex=True, na=False)
                         ].reset_index(drop=True)
 
                     df_toa = None
+                    data_toa_str = ""
                     if up_toa:
                         colunas_uteis_toa = [
                             "Data", "Contrato", "Status da Atividade", "Motivo de Fechamento Externo",
@@ -316,11 +322,20 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                         for file in up_toa:
                             tdf = ler_arquivo_seguro(file)
                             tdf.columns = [str(c).strip() for c in tdf.columns]
+                            if "Data" in tdf.columns:
+                                datas_t = pd.to_datetime(tdf["Data"], dayfirst=True, errors='coerce').dropna()
+                                if not datas_t.empty and not data_toa_str:
+                                    data_toa_str = datas_t.iloc[0].strftime("%d/%m/%Y")
                             cols_presentes = [c for c in colunas_uteis_toa if c in tdf.columns]
                             if cols_presentes:
                                 tdf = tdf[cols_presentes]
                             toa_dfs.append(tdf)
                         df_toa = pd.concat(toa_dfs, ignore_index=True)
+
+                    # --- TRAVA DE SEGURANÇA DE DATAS ---
+                    if data_aniel_str and data_toa_str and data_aniel_str != data_toa_str:
+                        st.error(f"❌ **Erro de Validação:** Os arquivos possuem datas divergentes! ANIEL refere-se a **{data_aniel_str}** e o TOA refere-se a **{data_toa_str}**. Certifique-se de carregar os arquivos do mesmo dia.")
+                        st.stop()
 
                     for col in ["ST1", "ST2", "ST3", "CANCELADAS", "PME"]:
                         if col not in df_aniel.columns:
@@ -471,7 +486,6 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                     st.session_state.df_valido = df_valido
                     st.session_state.df_aniel_full = df_aniel
 
-                    # --- EXTRAÇÃO RIGOROSA DE SUPERVISORES POR PROJETO/BASE (COM FILTRO DE LIMPEZA) ---
                     sup_map = {}
                     for item in bases_config:
                         b_proj = item["projeto"]
@@ -503,7 +517,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                     st.error(f"Erro ao processar: {e}")
 
     if st.session_state.processado_sucesso and st.session_state.df_valido is not None:
-        st.success("✅ Arquivos carregados e tratados com sucesso!")
+        st.success("✅ Arquivos validados (mesma data) e processados com sucesso!")
         st.button(
             "Ir para Dados Operacionais ➡️",
             type="primary",
@@ -512,7 +526,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (COM SOMA AUTOMÁTICA DE PARADOS E MONTADOS)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -539,21 +553,47 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         df_config_eq = carregar_config_equipe()
 
         tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
+        
+        # Dicionários para guardar os totais somados por base em tempo real
+        totais_bases_calc = {}
+
         for i, item in enumerate(bases_config):
             b_label = item["label"]
             b_proj = item["projeto"]
             with tabs[i]:
-                # Obter montados e parados da base a partir do Config_Equipe do Sheets se existir
                 df_b_eq = df_config_eq[df_config_eq["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq.empty else pd.DataFrame()
                 
-                def_montados_base = int(df_b_eq["Montados"].sum()) if not df_b_eq.empty and "Montados" in df_b_eq.columns else (68 if "ABCDM" in b_proj else (76 if "Guarulhos" in b_proj else 80))
-                def_parados_base = int(df_b_eq["Parados"].sum()) if not df_b_eq.empty and "Parados" in df_b_eq.columns else (4 if "ABCDM" in b_proj else (6 if "Guarulhos" in b_proj else 5))
+                st.markdown(f"##### 👥 Equipa de Supervisores da Base {b_label} (Pré-preenchidos do Sheets):")
+                sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
                 
+                soma_m_base = 0
+                soma_p_base = 0
+
+                if sups_base:
+                    col_s1, col_s2 = st.columns(2)
+                    for sup in sups_base:
+                        sup_eq = df_b_eq[df_b_eq["Supervisor"].astype(str).str.upper().str.strip() == sup.strip().upper()] if not df_b_eq.empty and "Supervisor" in df_b_eq.columns else pd.DataFrame()
+                        m_def = int(sup_eq["Montados"].values[0]) if not sup_eq.empty and pd.notna(sup_eq["Montados"].values[0]) else 20
+                        p_def = int(sup_eq["Parados"].values[0]) if not sup_eq.empty and pd.notna(sup_eq["Parados"].values[0]) else 0
+
+                        with col_s1:
+                            val_m = st.number_input(f"Montados: {sup}", value=m_def, key=f"m_{b_proj}_{sup}")
+                            soma_m_base += val_m
+                        with col_s2:
+                            val_p = st.number_input(f"Parados: {sup}", value=p_def, key=f"p_{b_proj}_{sup}")
+                            soma_p_base += val_p
+                else:
+                    st.info(f"Nenhum supervisor encontrado para o projeto {b_proj} no arquivo ANIEL carregado.")
+
+                totais_bases_calc[b_proj] = {"montados": soma_m_base, "parados": soma_p_base}
+
+                st.markdown("---")
                 c1, c2, c3, c4 = st.columns(4)
                 
                 with c1:
-                    montados_val = st.number_input(f"Total Montados ({b_label})", value=def_montados_base, key=f"inp_mon_{b_proj}")
-                    parados_val = st.number_input(f"Total Parados ({b_label})", value=def_parados_base, key=f"inp_par_{b_proj}")
+                    # Totais automáticos vindos da soma dos supervisores
+                    st.markdown(f"**Total Montados (Automático):**\n### {fmt_br(soma_m_base)}")
+                    st.markdown(f"**Total Parados (Automático):**\n### {fmt_br(soma_p_base)}")
                 
                 with c2:
                     meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=11800 if "ABCDM" in b_proj else 12200, key=f"inp_meta_os_{b_proj}")
@@ -567,7 +607,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Projeção de O.S. (Mês):**\n### {fmt_br(proj_os_val)}\n*(Média: {fmt_br(media_d, 0)}/dia em {qtd_d} dias)*")
 
                 with c3:
-                    meta_cons_auto = int(montados_val * 8)
+                    meta_cons_auto = int(soma_m_base * 8)
                     st.markdown(f"**Meta do Consultivo (Automático):**\n### {fmt_br(meta_cons_auto)}")
                     st.session_state[f"inp_meta_c_{b_proj}"] = meta_cons_auto
 
@@ -580,28 +620,9 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     os_consult_val = hoje_cons_val * 2
                     st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
 
-                st.markdown("---")
-                st.markdown(f"##### 👥 Equipa de Supervisores da Base {b_label} (Carregados do Sheets):")
-                sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
-                
-                if sups_base:
-                    col_s1, col_s2 = st.columns(2)
-                    for sup in sups_base:
-                        # Buscar valores do Sheets se houver
-                        sup_eq = df_b_eq[df_b_eq["Supervisor"].astype(str).str.upper().str.strip() == sup.strip().upper()] if not df_b_eq.empty and "Supervisor" in df_b_eq.columns else pd.DataFrame()
-                        m_def = int(sup_eq["Montados"].values[0]) if not sup_eq.empty and pd.notna(sup_eq["Montados"].values[0]) else 20
-                        p_def = int(sup_eq["Parados"].values[0]) if not sup_eq.empty and pd.notna(sup_eq["Parados"].values[0]) else 0
-
-                        with col_s1:
-                            st.number_input(f"Montados: {sup}", value=m_def, key=f"m_{b_proj}_{sup}")
-                        with col_s2:
-                            st.number_input(f"Parados: {sup}", value=p_def, key=f"p_{b_proj}_{sup}")
-                else:
-                    st.info(f"Nenhum supervisor encontrado para o projeto {b_proj} no arquivo ANIEL carregado.")
-
         st.markdown("---")
         
-        # --- BOTÃO DE SINCRONIZAÇÃO SEGURO COM LEITURA E APPEND PARA NÃO APAGAR NADA ---
+        # --- BOTÃO DE SINCRONIZAÇÃO SEGURO COM ESCRITA NO GOOGLE SHEETS ---
         if st.button("📊 Sincronizar Google Sheets e Gerar Prévia Executiva", type="primary"):
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -631,7 +652,24 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS", data=df_hist_sheet)
                 st.session_state["df_historico_custom"] = df_hist_sheet
 
-                # 2. ATUALIZAR ABA 'Historico_Equipe'
+                # 2. ATUALIZAR ABA 'Config_Equipe'
+                linhas_config_equipe = []
+                for item in bases_config:
+                    b_proj = item["projeto"]
+                    sups_b = st.session_state.supervisores_por_base.get(b_proj, [])
+                    for s in sups_b:
+                        m_s = st.session_state.get(f"m_{b_proj}_{s}", 20)
+                        p_s = st.session_state.get(f"p_{b_proj}_{s}", 0)
+                        linhas_config_equipe.append({
+                            "Base": b_proj,
+                            "Supervisor": s,
+                            "Montados": m_s,
+                            "Parados": p_s
+                        })
+                df_config_equipe_nova = pd.DataFrame(linhas_config_equipe)
+                conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Config_Equipe", data=df_config_equipe_nova)
+
+                # 3. ATUALIZAR ABA 'Historico_Equipe'
                 try:
                     df_hist_eq_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_Equipe")
                     if df_hist_eq_sheet is None:
@@ -639,7 +677,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 except Exception:
                     df_hist_eq_sheet = pd.DataFrame(columns=["Data", "Base", "Supervisor", "Montados", "Parados"])
 
-                linhas_nova_equipe = []
+                linhas_nova_hist_eq = []
                 for item in bases_config:
                     b_label = item["label"]
                     b_proj = item["projeto"]
@@ -647,7 +685,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     for s in sups_b:
                         m_s = st.session_state.get(f"m_{b_proj}_{s}", 20)
                         p_s = st.session_state.get(f"p_{b_proj}_{s}", 0)
-                        linhas_nova_equipe.append({
+                        linhas_nova_hist_eq.append({
                             "Data": data_formatada,
                             "Base": b_label,
                             "Supervisor": s,
@@ -655,7 +693,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                             "Parados": p_s
                         })
                 
-                df_novo_hist_eq = pd.DataFrame(linhas_nova_equipe)
+                df_novo_hist_eq = pd.DataFrame(linhas_nova_hist_eq)
                 if not df_hist_eq_sheet.empty and "Data" in df_hist_eq_sheet.columns:
                     df_hist_eq_sheet = df_hist_eq_sheet[df_hist_eq_sheet["Data"].astype(str) != str(data_formatada)]
                     df_hist_eq_final = pd.concat([df_hist_eq_sheet, df_novo_hist_eq], ignore_index=True)
@@ -664,7 +702,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_Equipe", data=df_hist_eq_final)
 
-                # 3. ATUALIZAR ABA 'Previas_Diarias'
+                # 4. ATUALIZAR ABA 'Previas_Diarias'
                 try:
                     df_previas_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
                     if df_previas_sheet is None:
@@ -683,12 +721,13 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     if "Tipo de Serviço" in df_b.columns:
                         df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
                     
-                    p_base = st.session_state.get(f"inp_par_{b_proj}", 4)
-                    m_base = st.session_state.get(f"inp_mon_{b_proj}", 68)
+                    t_base = totais_bases_calc.get(b_proj, {"montados": 68, "parados": 4})
+                    m_base = t_base["montados"]
+                    p_base = t_base["parados"]
                     meta_os_b = st.session_state.get(f"inp_meta_os_{b_proj}", 11800)
                     meta_c_b = int(m_base * 8)
                     hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 12)
-                    ganho_b = st.session_state.get(f"inp_ganho_{b_proj}", 27)
+                    ganho_b = 27 if "ABCDM" in b_proj else (40 if "Guarulhos" in b_proj else 42)
 
                     def calc_exp_met(df_sub, montados, hoje_c):
                         tot_os = len(df_sub)
@@ -708,24 +747,20 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         proj_os_exec = prod_count + (aberta_count * efic)
                         proj_dia = int(round(proj_os_exec, 0))
                         
-                        pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
-                        pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
-                        pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
-                        den_pts = pontos_improd + pontos_prod
-                        efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
-                        pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
-                        
+                        pontos = int(round(df_sub["Pontos Prev."].sum(), 0)) if "Pontos Prev." in df_sub.columns else 0
                         media_os = (proj_dia / montados) if montados > 0 else 0.0
 
-                        def c_sub(df_item):
-                            if "Tipo de OS" not in df_item.columns: return 0.0
-                            i = len(df_item[df_item["Tipo de OS"] == "IMPRODUTIVA"])
-                            p = len(df_item[df_item["Tipo de OS"] == "PRODUTIVA"])
-                            d = i + p
-                            return (i / d * 100) if d > 0 else 0.0
+                        def c_sub_quebra(df_item, tipo_quebra_desejada):
+                            if "QUEBRAS" not in df_item.columns or "Tipo de OS" not in df_item.columns: return 0.0
+                            df_cat = df_item[df_item["QUEBRAS"] == tipo_quebra_desejada]
+                            i_c = len(df_cat[df_cat["Tipo de OS"] == "IMPRODUTIVA"])
+                            p_c = len(df_cat[df_cat["Tipo de OS"] == "PRODUTIVA"])
+                            d_c = i_c + p_c
+                            return (i_c / d_c * 100) if d_c > 0 else 0.0
 
-                        df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
-                        df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
+                        q_ins_val = c_sub_quebra(df_sub, "INSTALAÇÃO")
+                        q_serv_val = c_sub_quebra(df_sub, "SERVIÇOS")
+
                         df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
                         df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
                         df_ret = df_sub[df_sub["QUEBRAS"] == "RETORNO"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
@@ -751,14 +786,14 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         return {
                             "tot_os": tot_os, "os_aberta": aberta_count, "pontos": pontos,
                             "efic": round(efic * 100, 1), "media_os": round(media_os, 2), "proj_dia": proj_dia,
-                            "q_ins": round(c_sub(df_ins), 1), "q_serv": round(c_sub(df_serv), 1),
-                            "tot_nd": proj_nd, "q_nd": round(c_sub(df_nd_base), 1),
+                            "q_ins": round(q_ins_val, 1), "q_serv": round(q_serv_val, 1),
+                            "tot_nd": proj_nd, "q_nd": c_sub_quebra(df_nd_base, "INSTALAÇÃO"),
                             "os_canc": len(df_canc), "saiu_toa": len(df_saiu),
-                            "tot_gpon": len(df_gpon), "q_gpon": round(c_sub(df_gpon), 1),
-                            "tot_mig": len(df_mig), "q_mig": round(c_sub(df_mig), 1),
+                            "tot_gpon": len(df_gpon), "q_gpon": c_sub_quebra(df_gpon, "SERVIÇOS"),
+                            "tot_mig": len(df_mig), "q_mig": c_sub_quebra(df_mig, "INSTALAÇÃO"),
                             "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_mig.columns else 0,
                             "retorno_wo": len(df_ret), "tot_pme": len(df_pme),
-                            "q_pme": round(c_sub(df_pme), 1),
+                            "q_pme": c_sub_quebra(df_pme, "INSTALAÇÃO"),
                             "canc_pme": len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_pme.columns else 0
                         }
 
@@ -815,7 +850,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     df_previa_final = df_nova_previa
 
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias", data=df_previa_final)
-                st.success("✅ Histórico preservado e prévia completa sincronizada com sucesso no Google Sheets!")
+                st.success("✅ Configurações salvas no Sheets, histórico preservado e prévia sincronizada com sucesso!")
                 
             except Exception as e:
                 st.error(f"Erro ao conectar ou escrever no Google Sheets: {e}")
@@ -833,6 +868,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     dias_uteis = st.session_state.get("dias_uteis_auto", 27)
     dias_trab = st.session_state.get("dias_trab_auto", 19)
     data_formatada = data_selecionada
+
+    df_config_eq_v = carregar_config_equipe()
 
     def calcular_metricas(df_sub, montados, hoje_c):
         if isinstance(df_sub, pd.DataFrame) and not df_sub.empty:
@@ -858,23 +895,17 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             proj_os_exec = prod_count + (aberta_count * efic)
             proj_dia = int(round(proj_os_exec, 0))
             
-            pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
-            pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
-            pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
-            
-            den_pts = pontos_improd + pontos_prod
-            efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
-            pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
-            
+            pontos = int(round(df_sub["Pontos Prev."].sum(), 0)) if "Pontos Prev." in df_sub.columns else 0
             media_os = (proj_dia / montados) if montados > 0 else 0.0
             
             os_canc = len(df_canc)
             saiu_toa = len(df_saiu)
 
-            def calc_q_sub(df_item):
-                if "Tipo de OS" not in df_item.columns: return 0.0
-                i_c = len(df_item[df_item["Tipo de OS"] == "IMPRODUTIVA"])
-                p_c = len(df_item[df_item["Tipo de OS"] == "PRODUTIVA"])
+            def c_sub_quebra(df_item, tipo_quebra_desejada):
+                if "QUEBRAS" not in df_item.columns or "Tipo de OS" not in df_item.columns: return 0.0
+                df_cat = df_item[df_item["QUEBRAS"] == tipo_quebra_desejada]
+                i_c = len(df_cat[df_cat["Tipo de OS"] == "IMPRODUTIVA"])
+                p_c = len(df_cat[df_cat["Tipo de OS"] == "PRODUTIVA"])
                 d_c = i_c + p_c
                 return (i_c / d_c * 100) if d_c > 0 else 0.0
 
@@ -908,13 +939,13 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_canc": os_canc, "saiu_toa": saiu_toa,
-                "q_ins": calc_q_sub(df_ins), "q_serv": calc_q_sub(df_serv),
-                "tot_nd": proj_nd, "q_nd": calc_q_sub(df_nd_base),
-                "tot_gpon": len(df_gpon), "q_gpon": calc_q_sub(df_gpon),
-                "tot_mig": len(df_mig), "q_mig": calc_q_sub(df_mig),
+                "q_ins": c_sub_quebra(df_sub, "INSTALAÇÃO"), "q_serv": c_sub_quebra(df_sub, "SERVIÇOS"),
+                "tot_nd": proj_nd, "q_nd": c_sub_quebra(df_nd_base, "INSTALAÇÃO"),
+                "tot_gpon": len(df_gpon), "q_gpon": c_sub_quebra(df_gpon, "SERVIÇOS"),
+                "tot_mig": len(df_mig), "q_mig": c_sub_quebra(df_mig, "INSTALAÇÃO"),
                 "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_mig.columns else 0,
                 "retorno_wo": len(df_ret), "tot_pme": len(df_pme),
-                "q_pme": calc_q_sub(df_pme),
+                "q_pme": c_sub_quebra(df_pme, "INSTALAÇÃO"),
                 "canc_pme": len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_pme.columns else 0,
                 "_raw_q_ins": len(df_ins[df_ins["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_ins.columns else 0,
                 "_raw_tot_ins": len(df_ins[df_ins["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]) if "Tipo de OS" in df_ins.columns else 0,
@@ -995,8 +1026,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
     metricas_bases = {}
 
-    df_config_eq_l = carregar_config_equipe()
-
     for item in bases_config:
         b_label = item["label"]
         b_proj = item["projeto"]
@@ -1005,9 +1034,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         if not df_b.empty and "Tipo de Serviço" in df_b.columns:
             df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
         
-        df_b_eq_l = df_config_eq_l[df_config_eq_l["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq_l.empty else pd.DataFrame()
-        m_base = int(df_b_eq_l["Montados"].sum()) if not df_b_eq_l.empty and "Montados" in df_b_eq_l.columns else (68 if "ABCDM" in b_proj else (76 if "Guarulhos" in b_proj else 80))
-        p_base = int(df_b_eq_l["Parados"].sum()) if not df_b_eq_l.empty and "Parados" in df_b_eq_l.columns else (4 if "ABCDM" in b_proj else (6 if "Guarulhos" in b_proj else 5))
+        df_b_eq_v = df_config_eq_v[df_config_eq_v["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq_v.empty else pd.DataFrame()
+        m_base = int(df_b_eq_v["Montados"].sum()) if not df_b_eq_v.empty and "Montados" in df_b_eq_v.columns else (68 if "ABCDM" in b_proj else (76 if "Guarulhos" in b_proj else 80))
+        p_base = int(df_b_eq_v["Parados"].sum()) if not df_b_eq_v.empty and "Parados" in df_b_eq_v.columns else (4 if "ABCDM" in b_proj else (6 if "Guarulhos" in b_proj else 5))
 
         meta_os_b = 11800 if "ABCDM" in b_proj else 12200
         meta_c_b = int(m_base * 8)
@@ -1093,12 +1122,18 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     g_proj_exec_total = int(round(g_prod + (g_aberta * (g_efic / 100.0)), 0))
     g_media_os = (g_proj_exec_total / g_montados) if g_montados > 0 else 0.0
     g_os_sem_c_total = g_proj_exec_total - g_os_cons
-    g_q_ins = (g_raw_ins_q / g_raw_ins_tot * 100) if g_raw_ins_tot > 0 else 0.0
-    g_q_serv = (g_raw_serv_q / g_raw_serv_tot * 100) if g_raw_serv_tot > 0 else 0.0
-    g_q_nd = (g_raw_nd_q / g_nd * 100) if g_nd > 0 else 0.0
-    g_q_gpon = (g_raw_gpon_q / g_gpon * 100) if g_gpon > 0 else 0.0
-    g_q_mig = (g_raw_mig_q / g_mig * 100) if g_mig > 0 else 0.0
-    g_q_pme = (g_raw_pme_q / g_pme * 100) if g_pme > 0 else 0.0
+    
+    # Médias ponderadas gerais para as quebras do totalizador
+    tot_ins_geral = sum([m["res"]["_raw_tot_ins"] for m in metricas_bases.values()])
+    q_ins_geral = (sum([m["res"]["_raw_q_ins"] for m in metricas_bases.values()]) / tot_ins_geral * 100) if tot_ins_geral > 0 else 0.0
+
+    tot_serv_geral = sum([m["res"]["_raw_tot_serv"] for m in metricas_bases.values()])
+    q_serv_geral = (sum([m["res"]["_raw_q_serv"] for m in metricas_bases.values()]) / tot_serv_geral * 100) if tot_serv_geral > 0 else 0.0
+
+    g_q_nd = (sum([m["res"]["_raw_q_nd"] for m in metricas_bases.values()]) / g_nd * 100) if g_nd > 0 else 0.0
+    g_q_gpon = (sum([m["res"]["_raw_q_gpon"] for m in metricas_bases.values()]) / g_gpon * 100) if g_gpon > 0 else 0.0
+    g_q_mig = (sum([m["res"]["_raw_q_mig"] for m in metricas_bases.values()]) / g_mig * 100) if g_mig > 0 else 0.0
+    g_q_pme = (sum([m["res"]["_raw_q_pme"] for m in metricas_bases.values()]) / g_pme * 100) if g_pme > 0 else 0.0
 
     tabela_html.append(
         f'<tr class="tr-total">'
@@ -1118,8 +1153,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         f'<td class="col-destaque-azul">{fmt_br(g_media_os, 2)}</td>'
         f'<td>{fmt_br(g_proj_exec_total)}</td>'
         f'<td class="col-destaque-amarelo">{fmt_br(g_os_sem_c_total)}</td>'
-        f'<td>{fmt_br(g_q_ins, 1)}%</td>'
-        f'<td>{fmt_br(g_q_serv, 1)}%</td>'
+        f'<td>{fmt_br(q_ins_geral, 1)}%</td>'
+        f'<td>{fmt_br(q_serv_geral, 1)}%</td>'
         f'<td>{fmt_br(g_q_nd, 1)}%</td>'
         f'<td>{fmt_br(g_nd)}</td>'
         f'<td>{fmt_br(g_canc)}</td>'
