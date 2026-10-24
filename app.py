@@ -825,9 +825,15 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         st.session_state["data_formatada"] = data_formatada
 
         defaults = {
-            "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "hoje_cons": 12, "ganho_os": 27},
-            "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "hoje_cons": 19, "ganho_os": 40},
-            "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "hoje_cons": 39, "ganho_os": 42}
+            "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "hoje_cons": 12, "ganho_os": 27,
+                          "sup_parados": {"EDSON MARCO PINHEIRO": 3, "MAICON APARECIDO FARIA": 1, "NELSON ALVES OLIVEIRA JUNIOR": 0, "APOIO SÃO PAULO": 0},
+                          "sup_montados": {"EDSON MARCO PINHEIRO": 23, "MAICON APARECIDO FARIA": 22, "NELSON ALVES OLIVEIRA JUNIOR": 23, "APOIO SÃO PAULO": 0}},
+            "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "hoje_cons": 19, "ganho_os": 40,
+                              "sup_parados": {"ADRIANO NASCIMENTO DA SILVA": 0, "DANIELE BARBOSA DE OLIVEIRA": 3, "FERNANDO CESAR COELHO RAMOS": 2, "PALOMA REGINA SILVA BATISTA": 1},
+                              "sup_montados": {"ADRIANO NASCIMENTO DA SILVA": 20, "DANIELE BARBOSA DE OLIVEIRA": 20, "FERNANDO CESAR COELHO RAMOS": 19, "PALOMA REGINA SILVA BATISTA": 19}},
+            "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "hoje_cons": 39, "ganho_os": 42,
+                          "sup_parados": {"ALAN DE ANDRADE DIAS": 2, "ELISANGELA CASSIMIRO GONCALVES": 0, "FRANCISCO GERALDO CARVALHO JUNIOR": 0, "JOAO CARLOS FERREIRA MIRON": 3},
+                          "sup_montados": {"ALAN DE ANDRADE DIAS": 26, "ELISANGELA CASSIMIRO GONCALVES": 11, "FRANCISCO GERALDO CARVALHO JUNIOR": 26, "JOAO CARLOS FERREIRA MIRON": 17}}
         }
 
         tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
@@ -869,18 +875,16 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
 
                 st.markdown("---")
-                st.markdown(f"##### 👥 Equipa de Supervisores da Base {b_label} (Extraídos estritamente do ANIEL):")
+                st.markdown(f"##### 👥 Equipa de Supervisores (Montados e Parados):")
                 sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
-                
-                if sups_base:
-                    col_s1, col_s2 = st.columns(2)
-                    for sup in sups_base:
-                        with col_s1:
-                            st.number_input(f"Montados: {sup}", value=20, key=f"m_{b_proj}_{sup}")
-                        with col_s2:
-                            st.number_input(f"Parados: {sup}", value=0, key=f"p_{b_proj}_{sup}")
-                else:
-                    st.info(f"Nenhum supervisor encontrado para o projeto {b_proj} no arquivo ANIEL carregado.")
+                col_s1, col_s2 = st.columns(2)
+                for sup in sups_base:
+                    def_p = d.get("sup_parados", {}).get(sup, 0)
+                    def_m = d.get("sup_montados", {}).get(sup, 20)
+                    with col_s1:
+                        st.number_input(f"Montados: {sup}", value=def_m, key=f"m_{b_proj}_{sup}")
+                    with col_s2:
+                        st.number_input(f"Parados: {sup}", value=def_p, key=f"p_{b_proj}_{sup}")
 
         st.markdown("---")
         
@@ -958,7 +962,8 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         proj_os_exec = prod_count + (aberta_count * efic)
                         proj_dia = int(round(proj_os_exec, 0))
                         
-                        pontos = int(round(df_prod["Pontos Prev."].sum(), 0)) if "Pontos Prev." in df_prod.columns else 0
+                        # CORREÇÃO DOS PONTOS: Soma correta do campo Pontos Prev. de todo o subconjunto válido
+                        pontos = int(round(df_sub["Pontos Prev."].sum(), 0)) if "Pontos Prev." in df_sub.columns else 0
                         media_os = (prod_count / montados) if montados > 0 else 0.0
 
                         def c_sub(df_item):
@@ -1102,10 +1107,10 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             proj_os_exec = prod_count + (aberta_count * efic)
             proj_dia = int(round(proj_os_exec, 0))
             
-            pontos_total = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
+            # CORREÇÃO DOS PONTOS: Soma correta do campo Pontos Prev. em todo o DataFrame filtrado
+            pontos_total = df_sub["Pontos Prev."].sum() if "Pontos Prev." in df_sub.columns else 0.0
             pontos = int(round(pontos_total, 0))
             
-            # CORREÇÃO DA MÉDIA O.S.: Divisão exata das O.S. Executadas (prod_count) pelo total de Montados
             media_os = (prod_count / montados) if montados > 0 else 0.0
             
             os_canc = len(df_canc)
@@ -1129,7 +1134,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
             df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
             
-            # CORREÇÃO DA PROJEÇÃO DA ND: Aplicando Produtiva + (Em Aberto * Eficiência da ND)
             nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
             nd_improd = len(df_nd_base[df_nd_base["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
             nd_aberto = len(df_nd_base[df_nd_base["Tipo de OS"] == "EM ABERTO"]) if "Tipo de OS" in df_nd_base.columns else 0
