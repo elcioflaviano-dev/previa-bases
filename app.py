@@ -825,15 +825,9 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         st.session_state["data_formatada"] = data_formatada
 
         defaults = {
-            "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "hoje_cons": 12, "ganho_os": 27,
-                          "sup_parados": {"EDSON MARCO PINHEIRO": 3, "MAICON APARECIDO FARIA": 1, "NELSON ALVES OLIVEIRA JUNIOR": 0, "APOIO SÃO PAULO": 0},
-                          "sup_montados": {"EDSON MARCO PINHEIRO": 23, "MAICON APARECIDO FARIA": 22, "NELSON ALVES OLIVEIRA JUNIOR": 23, "APOIO SÃO PAULO": 0}},
-            "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "hoje_cons": 19, "ganho_os": 40,
-                              "sup_parados": {"ADRIANO NASCIMENTO DA SILVA": 0, "DANIELE BARBOSA DE OLIVEIRA": 3, "FERNANDO CESAR COELHO RAMOS": 2, "PALOMA REGINA SILVA BATISTA": 1},
-                              "sup_montados": {"ADRIANO NASCIMENTO DA SILVA": 20, "DANIELE BARBOSA DE OLIVEIRA": 20, "FERNANDO CESAR COELHO RAMOS": 19, "PALOMA REGINA SILVA BATISTA": 19}},
-            "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "hoje_cons": 39, "ganho_os": 42,
-                          "sup_parados": {"ALAN DE ANDRADE DIAS": 2, "ELISANGELA CASSIMIRO GONCALVES": 0, "FRANCISCO GERALDO CARVALHO JUNIOR": 0, "JOAO CARLOS FERREIRA MIRON": 3},
-                          "sup_montados": {"ALAN DE ANDRADE DIAS": 26, "ELISANGELA CASSIMIRO GONCALVES": 11, "FRANCISCO GERALDO CARVALHO JUNIOR": 26, "JOAO CARLOS FERREIRA MIRON": 17}}
+            "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "hoje_cons": 12, "ganho_os": 27},
+            "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "hoje_cons": 19, "ganho_os": 40},
+            "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "hoje_cons": 39, "ganho_os": 42}
         }
 
         tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
@@ -875,16 +869,18 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
 
                 st.markdown("---")
-                st.markdown(f"##### 👥 Equipa de Supervisores (Montados e Parados):")
+                st.markdown(f"##### 👥 Equipa de Supervisores da Base {b_label} (Extraídos estritamente do ANIEL):")
                 sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
-                col_s1, col_s2 = st.columns(2)
-                for sup in sups_base:
-                    def_p = d.get("sup_parados", {}).get(sup, 0)
-                    def_m = d.get("sup_montados", {}).get(sup, 20)
-                    with col_s1:
-                        st.number_input(f"Montados: {sup}", value=def_m, key=f"m_{b_proj}_{sup}")
-                    with col_s2:
-                        st.number_input(f"Parados: {sup}", value=def_p, key=f"p_{b_proj}_{sup}")
+                
+                if sups_base:
+                    col_s1, col_s2 = st.columns(2)
+                    for sup in sups_base:
+                        with col_s1:
+                            st.number_input(f"Montados: {sup}", value=20, key=f"m_{b_proj}_{sup}")
+                        with col_s2:
+                            st.number_input(f"Parados: {sup}", value=0, key=f"p_{b_proj}_{sup}")
+                else:
+                    st.info(f"Nenhum supervisor encontrado para o projeto {b_proj} no arquivo ANIEL carregado.")
 
         st.markdown("---")
         
@@ -962,16 +958,15 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         proj_os_exec = prod_count + (aberta_count * efic)
                         proj_dia = int(round(proj_os_exec, 0))
                         
-                        # --- CÁLCULO EXATO DE PONTOS COM PROJEÇÃO ---
                         pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
                         pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
                         pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
-                        
                         den_pts = pontos_improd + pontos_prod
                         efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
                         pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
                         
-                        media_os = (prod_count / montados) if montados > 0 else 0.0
+                        # CORREÇÃO DA MÉDIA O.S.: Divisão exata do proj_dia (ou proj_os_exec) pelos montados, conforme solicitado
+                        media_os = (proj_dia / montados) if montados > 0 else 0.0
 
                         def c_sub(df_item):
                             if "Tipo de OS" not in df_item.columns: return 0.0
@@ -1114,7 +1109,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             proj_os_exec = prod_count + (aberta_count * efic)
             proj_dia = int(round(proj_os_exec, 0))
             
-            # --- CÁLCULO EXATO DE PONTOS COM PROJEÇÃO ---
             pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
             pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
             pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
@@ -1123,7 +1117,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
             pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
             
-            media_os = (prod_count / montados) if montados > 0 else 0.0
+            # CORREÇÃO EXATA DA MÉDIA O.S.: Divisão exata do proj_dia (Total de O.S. Executadas da prévia) pelos Montados
+            media_os = (proj_dia / montados) if montados > 0 else 0.0
             
             os_canc = len(df_canc)
             saiu_toa = len(df_saiu)
@@ -1170,7 +1165,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "tot_gpon": len(df_gpon), "q_gpon": calc_q_sub(df_gpon),
                 "tot_mig": len(df_mig), "q_mig": calc_q_sub(df_mig),
                 "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_mig.columns else 0,
-                "retorno_wo": len(df_ret), "tot_pme": len(df_pme), "q_pme": calc_q_sub(df_pme),
+                "retorno_wo": len(df_ret), "tot_pme": len(df_pme),
+                "q_pme": calc_q_sub(df_pme),
                 "canc_pme": len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_pme.columns else 0,
                 "_raw_q_ins": len(df_ins[df_ins["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_ins.columns else 0,
                 "_raw_tot_ins": len(df_ins[df_ins["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]) if "Tipo de OS" in df_ins.columns else 0,
@@ -1343,7 +1339,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
     g_den_quebra = g_quebra + g_prod
     g_efic = (max(0.0, 1.0 - (g_quebra / g_den_quebra)) * 100) if g_den_quebra > 0 else 0.0
-    g_media_os = (g_prod / g_montados) if g_montados > 0 else 0.0
+    g_media_os = (g_proj_exec_total / g_montados) if g_montados > 0 else 0.0
     g_proj_exec_total = int(round(g_prod + (g_aberta * (g_efic / 100.0)), 0))
     g_os_sem_c_total = g_proj_exec_total - g_os_cons
     g_q_ins = (g_raw_ins_q / g_raw_ins_tot * 100) if g_raw_ins_tot > 0 else 0.0
