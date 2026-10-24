@@ -899,7 +899,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
         st.markdown("---")
         
-        # --- BOTÃO DE SINCRONIZAÇÃO E ESCRITA DIRETA NO GOOGLE SHEETS ---
+       # --- BOTÃO DE SINCRONIZAÇÃO E ESCRITA DIRETA NO GOOGLE SHEETS ---
         if st.button("📊 Sincronizar Google Sheets e Gerar Prévia Executiva", type="primary"):
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -911,7 +911,9 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             except Exception as e:
                 st.error(f"Erro ao conectar ou escrever no Google Sheets: {e}")
             
-            ir_para_passo_3()
+            # Atualiza a página e recarrega para refletir na barra lateral
+            st.session_state["pagina_atual"] = "3. Visualização da Prévia"
+            st.rerun()
 
 # ==============================================================================
 # PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA
