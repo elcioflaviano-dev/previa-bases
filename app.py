@@ -968,13 +968,13 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         ]
                         ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
                         df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
-                        nd_prod = len(df_nd_base)
+                        nd_total = len(df_nd_base)
 
                         return {
                             "tot_os": tot_os, "os_aberta": aberta_count, "pontos": pontos,
                             "efic": round(efic * 100, 1), "media_os": round(media_os, 2), "proj_dia": proj_dia,
                             "q_ins": round(c_sub(df_ins), 1), "q_serv": round(c_sub(df_serv), 1),
-                            "tot_nd": nd_prod, "q_nd": round(c_sub(df_nd_base), 1),
+                            "tot_nd": nd_total, "q_nd": round(c_sub(df_nd_base), 1),
                             "os_canc": len(df_canc), "saiu_toa": len(df_saiu),
                             "tot_gpon": len(df_gpon), "q_gpon": round(c_sub(df_gpon), 1),
                             "tot_mig": len(df_mig), "q_mig": round(c_sub(df_mig), 1),
@@ -1104,7 +1104,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
             df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
             
-            nd_prod = len(df_nd_base)
+            # Contagem total exata da ND conforme a dinâmica da tabela dinâmica do Excel
+            nd_total = len(df_nd_base)
 
             df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
             df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
@@ -1119,7 +1120,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_canc": os_canc, "saiu_toa": saiu_toa,
                 "q_ins": calc_q_sub(df_ins), "q_serv": calc_q_sub(df_serv),
-                "tot_nd": nd_prod, "q_nd": calc_q_sub(df_nd_base),
+                "tot_nd": nd_total, "q_nd": calc_q_sub(df_nd_base),
                 "tot_gpon": len(df_gpon), "q_gpon": calc_q_sub(df_gpon),
                 "tot_mig": len(df_mig), "q_mig": calc_q_sub(df_mig),
                 "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_mig.columns else 0,
@@ -1278,6 +1279,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             f'<td>{fmt_br(res["q_ins"], 1)}%</td>'
             f'<td>{fmt_br(res["q_serv"], 1)}%</td>'
             f'<td>{fmt_br(res["q_nd"], 1)}%</td>'
+            f'<td>{fmt_br(res["tot_nd"])}</td>'
             f'<td>{fmt_br(res["os_canc"])}</td>'
             f'<td>{fmt_br(res["saiu_toa"])}</td>'
             f'<td>{fmt_br(m["ganho"])}</td>'
@@ -1326,6 +1328,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         f'<td>{fmt_br(g_q_ins, 1)}%</td>'
         f'<td>{fmt_br(g_q_serv, 1)}%</td>'
         f'<td>{fmt_br(g_q_nd, 1)}%</td>'
+        f'<td>{fmt_br(g_nd)}</td>'
         f'<td>{fmt_br(g_canc)}</td>'
         f'<td>{fmt_br(g_saiu_toa)}</td>'
         f'<td>{fmt_br(g_ganho)}</td>'
@@ -1383,6 +1386,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 f'<td>{fmt_br(res_b["q_ins"], 1)}%</td>'
                 f'<td>{fmt_br(res_b["q_serv"], 1)}%</td>'
                 f'<td>{fmt_br(res_b["q_nd"], 1)}%</td>'
+                f'<td>{fmt_br(res_b["tot_nd"])}</td>'
                 f'<td>{fmt_br(res_b["os_canc"])}</td>'
                 f'<td>{fmt_br(res_b["saiu_toa"])}</td>'
                 f'<td>{fmt_br(m["ganho"])}</td>'
@@ -1421,7 +1425,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                     f'<td>{fmt_br(res_s["q_ins"], 1)}%</td>'
                     f'<td>{fmt_br(res_s["q_serv"], 1)}%</td>'
                     f'<td>{fmt_br(res_s["q_nd"], 1)}%</td>'
-                    f'<td></td>'
+                    f'<td>{fmt_br(res_s["tot_nd"])}</td>'
                     f'<td>{fmt_br(res_s["os_canc"])}</td>'
                     f'<td>{fmt_br(res_s["saiu_toa"])}</td>'
                     f'<td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
