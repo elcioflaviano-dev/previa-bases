@@ -968,7 +968,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         ]
                         ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
                         df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
-                        nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
+                        nd_prod = len(df_nd_base)
 
                         return {
                             "tot_os": tot_os, "os_aberta": aberta_count, "pontos": pontos,
@@ -1104,7 +1104,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
             df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
             
-            nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
+            nd_prod = len(df_nd_base)
 
             df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
             df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
