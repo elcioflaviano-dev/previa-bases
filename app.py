@@ -161,7 +161,6 @@ def calcular_calendario_automatico(ref_date=None):
 
 def obter_df_historico():
     if "df_historico_custom" not in st.session_state:
-        # Tenta carregar da aba 'Historico_OS' do Google Sheets, se falhar usa o padrão
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
             df_h = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS")
@@ -294,7 +293,7 @@ BAIXAS_DICT = {
     "106 - CLIENTE AUSENTE": "IMPRODUTIVA",
     "107 - ENTRADA NAO AUTORIZADA": "IMPRODUTIVA",
     "108 - Realizar Obra Civil ou alteracao rede eletrica": "IMPRODUTIVA",
-    "110 - PROBLEMA НА TUBULACAO": "IMPRODUTIVA",
+    "110 - PROBLEMA NA TUBULACAO": "IMPRODUTIVA",
     "112 - SEM ACESSO AO DG / SOTAO / COMODO": "IMPRODUTIVA",
     "113 - Sem TV / Computador Na Residencia/ Celular": "IMPRODUTIVA",
     "114 - Habilitação telefonica não ok": "IMPRODUTIVA",
@@ -942,7 +941,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     p_base = st.session_state.get(f"inp_par_{b_proj}", 4)
                     m_base = st.session_state.get(f"inp_mon_{b_proj}", 68)
                     meta_os_b = st.session_state.get(f"inp_meta_os_{b_proj}", 11800)
-                    hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 12)
                     
                     res_b = {
                         "tot_os": len(df_b),
@@ -965,7 +963,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
                 df_nova_previa = pd.DataFrame(novas_linhas_previa)
                 
-                # Remove duplicada do mesmo dia/base se já existir e adiciona a nova
                 if not df_previas_antigas.empty and "Data" in df_previas_antigas.columns and "Base" in df_previas_antigas.columns:
                     df_previas_antigas = df_previas_antigas[
                         ~((df_previas_antigas["Data"].astype(str) == data_formatada) & 
@@ -990,7 +987,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
 
-    # --- SELETOR DE HISTÓRICO DE PRÉVIAS ANTERIORES ---
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         df_historico_previas = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
@@ -1308,14 +1304,19 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.markdown("".join(tabela_html), unsafe_allow_html=True)
     st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
-    if st.session_state.df_aniel_full is not None:
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            st.session_state.df_aniel_full.to_excel(output, index=False)
-        
-        st.download_button(
-            label="📥 Baixar Planilha ANIEL Tratada (.xlsx)",
-            data=output.getvalue(),
-            file_name="Planilha_Tratada_Aniel.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    if st.session_state.get("df_aniel_full") is not None:
+        try:
+            df_export = st.session_state["df_aniel_full"]
+            if not df_export.empty:
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                    df_export.to_excel(output, index=False)
+                
+                st.download_button(
+                    label="📥 Baixar Planilha ANIEL Tratada (.xlsx)",
+                    data=output.getvalue(),
+                    file_name="Planilha_Tratada_Aniel.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+        except Exception:
+            st.info("ℹ️ Carregue ou processe os arquivos no Passo 1 para habilitar o download da planilha tratada.")
