@@ -111,6 +111,15 @@ def obter_df_historico():
             st.session_state["df_historico_custom"] = pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
     return st.session_state["df_historico_custom"]
 
+def adicionar_historico_dia(data_str, base, os_exec):
+    df_hist = obter_df_historico()
+    base_norm = normalizar_nome_base(base)
+    if os_exec > 0:
+        if not df_hist.empty and "Data" in df_hist.columns and "Base" in df_hist.columns:
+            df_hist = df_hist[~((df_hist["Data"].astype(str) == str(data_str)) & (df_hist["Base"].astype(str).str.upper() == base_norm))]
+        nova_linha = pd.DataFrame([{"Data": str(data_str), "Base": base_norm, "OS_Executadas": int(os_exec)}])
+        st.session_state["df_historico_custom"] = pd.concat([df_hist, nova_linha], ignore_index=True)
+
 def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_hoje_str=None):
     base_norm = normalizar_nome_base(base_proj)
     df_b = obter_df_historico().copy()
@@ -779,7 +788,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         st.button(
             "Ir para Dados Operacionais ➡️",
             type="primary",
-            on_click=lambda: st.session_state.update({"pagina_atual": "2. Dados Operacionais por Base"}),
+            on_click=ir_para_passo_2,
             key="btn_ir_dados"
         )
 
@@ -968,13 +977,19 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         ]
                         ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
                         df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
-                        nd_total = len(df_nd_base)
+                        
+                        nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
+                        nd_improd = len(df_nd_base[df_nd_base["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
+                        nd_aberto = len(df_nd_base[df_nd_base["Tipo de OS"] == "EM ABERTO"]) if "Tipo de OS" in df_nd_base.columns else 0
+                        den_nd = nd_improd + nd_prod
+                        efic_nd = max(0.0, 1.0 - (nd_improd / den_nd)) if den_nd > 0 else 0.0
+                        proj_nd = int(round(nd_prod + (nd_aberto * efic_nd), 0))
 
                         return {
                             "tot_os": tot_os, "os_aberta": aberta_count, "pontos": pontos,
                             "efic": round(efic * 100, 1), "media_os": round(media_os, 2), "proj_dia": proj_dia,
                             "q_ins": round(c_sub(df_ins), 1), "q_serv": round(c_sub(df_serv), 1),
-                            "tot_nd": nd_total, "q_nd": round(c_sub(df_nd_base), 1),
+                            "tot_nd": proj_nd, "q_nd": round(c_sub(df_nd_base), 1),
                             "os_canc": len(df_canc), "saiu_toa": len(df_saiu),
                             "tot_gpon": len(df_gpon), "q_gpon": round(c_sub(df_gpon), 1),
                             "tot_mig": len(df_mig), "q_mig": round(c_sub(df_mig), 1),
@@ -1082,7 +1097,10 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             
             pontos_total = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
             pontos = int(round(pontos_total, 0))
+            
+            # CORREÇÃO DA MÉDIA O.S.: Divisão exata das O.S. Executadas (prod_count) pelo total de Montados
             media_os = (prod_count / montados) if montados > 0 else 0.0
+            
             os_canc = len(df_canc)
             saiu_toa = len(df_saiu)
 
@@ -1104,8 +1122,13 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
             df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
             
-            # Contagem total exata da ND conforme a dinâmica da tabela dinâmica do Excel
-            nd_total = len(df_nd_base)
+            # CORREÇÃO DA PROJEÇÃO DA ND: Aplicando Produtiva + (Em Aberto * Eficiência da ND)
+            nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
+            nd_improd = len(df_nd_base[df_nd_base["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
+            nd_aberto = len(df_nd_base[df_nd_base["Tipo de OS"] == "EM ABERTO"]) if "Tipo de OS" in df_nd_base.columns else 0
+            den_nd = nd_improd + nd_prod
+            efic_nd = max(0.0, 1.0 - (nd_improd / den_nd)) if den_nd > 0 else 0.0
+            proj_nd = int(round(nd_prod + (nd_aberto * efic_nd), 0))
 
             df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
             df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
@@ -1120,7 +1143,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_canc": os_canc, "saiu_toa": saiu_toa,
                 "q_ins": calc_q_sub(df_ins), "q_serv": calc_q_sub(df_serv),
-                "tot_nd": nd_total, "q_nd": calc_q_sub(df_nd_base),
+                "tot_nd": proj_nd, "q_nd": calc_q_sub(df_nd_base),
                 "tot_gpon": len(df_gpon), "q_gpon": calc_q_sub(df_gpon),
                 "tot_mig": len(df_mig), "q_mig": calc_q_sub(df_mig),
                 "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_mig.columns else 0,
@@ -1130,7 +1153,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "_raw_tot_ins": len(df_ins[df_ins["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]) if "Tipo de OS" in df_ins.columns else 0,
                 "_raw_q_serv": len(df_serv[df_serv["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_serv.columns else 0,
                 "_raw_tot_serv": len(df_serv[df_serv["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]) if "Tipo de OS" in df_serv.columns else 0,
-                "_raw_q_nd": len(df_nd_base[df_nd_base["Tipo de OS"] == "IMPRODUTIVA"]),
+                "_raw_q_nd": nd_improd,
                 "_raw_q_gpon": len(df_gpon[df_gpon["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_gpon.columns else 0,
                 "_raw_q_mig": len(df_mig[df_mig["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_mig.columns else 0,
                 "_raw_q_pme": len(df_pme[df_pme["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_pme.columns else 0
