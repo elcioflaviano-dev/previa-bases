@@ -898,14 +898,75 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
         st.markdown("---")
         
-        # --- BOTÃO DE SINCRONIZAÇÃO E ESCRITA DIRETA NO GOOGLE SHEETS ---
+        # --- BOTÃO DE SINCRONIZAÇÃO E ESCRITA DIRETA NO GOOGLE SHEETS (CONSOLIDADO DA PRÉVIA) ---
         if st.button("📊 Sincronizar Google Sheets e Gerar Prévia Executiva", type="primary"):
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
-                if st.session_state.df_aniel_full is not None:
-                    # Grava diretamente na planilha configurada (usando a URL definida)
-                    conn.update(spreadsheet=GOOGLE_SHEET_URL, data=st.session_state.df_aniel_full)
-                    st.success("✅ Dados sincronizados e gravados com sucesso no Google Sheets!")
+                if st.session_state.df_valido is not None:
+                    # Monta o DataFrame consolidado com os dados da prévia para gravar no Sheets
+                    dados_consolidados = []
+                    dias_uteis = st.session_state.get("dias_uteis_auto", 27)
+                    data_formatada = st.session_state.get("data_formatada", "22/10/2026")
+                    
+                    for item in bases_config:
+                        b_label = item["label"]
+                        b_proj = item["projeto"]
+                        
+                        df_b = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()]
+                        if "Tipo de Serviço" in df_b.columns:
+                            df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
+                        
+                        p_base = st.session_state.get(f"inp_par_{b_proj}", 4)
+                        m_base = st.session_state.get(f"inp_mon_{b_proj}", 68)
+                        meta_os_b = st.session_state.get(f"inp_meta_os_{b_proj}", 11800)
+                        meta_c_b = int(m_base * 8)
+                        hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 12)
+                        ganho_b = st.session_state.get(f"inp_ganho_{b_proj}", 27)
+
+                        res_b = calcular_metricas(df_b, m_base, hoje_c_b)
+                        os_sem_consult_val = int(round(res_b["proj_dia"] - (hoje_c_b * 2), 0))
+                        proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
+                        proj_c_b = int(round((hoje_c_b / dias_trab) * dias_uteis)) if 'dias_trab' in locals() and dias_trab > 0 else 0
+                        os_consult_b = hoje_c_b * 2
+
+                        dados_consolidados.append({
+                            "Data": data_formatada,
+                            "Base": b_label,
+                            "Parados": p_base,
+                            "Montados": m_base,
+                            "Meta O.S.": meta_os_b,
+                            "Projeção O.S.": proj_os_b,
+                            "Meta Consultivo": meta_c_b,
+                            "Projeção Consultivo": proj_c_b,
+                            "Hoje Consultivo": hoje_c_b,
+                            "O.S. Consultivo": os_consult_b,
+                            "Total O.S.": res_b["tot_os"],
+                            "O.S. Aberta": res_b["os_aberta"],
+                            "Pontos": res_b["pontos"],
+                            "Efic (%)": round(res_b["efic"], 1),
+                            "Média O.S.": round(res_b["media_os"], 2),
+                            "O.S. Exec. (Proj)": res_b["proj_dia"],
+                            "O.S. Sem Consult": os_sem_consult_val,
+                            "Quebra INS (%)": round(res_b["q_ins"], 1),
+                            "Quebra SERV (%)": round(res_b["q_serv"], 1),
+                            "Quebra ND (%)": round(res_b["q_nd"], 1),
+                            "O.S. Canc.": res_b["os_canc"],
+                            "Saiu TOA": res_b["saiu_toa"],
+                            "Ganho O.S.": ganho_b,
+                            "GPON Total": res_b["tot_gpon"],
+                            "GPON Quebra (%)": round(res_b["q_gpon"], 1),
+                            "Migração Total": res_b["tot_mig"],
+                            "Migração Quebra (%)": round(res_b["q_mig"], 1),
+                            "Migração Canc.": res_b["canc_mig"],
+                            "Retorno WO": res_b["retorno_wo"],
+                            "PME WO": res_b["tot_pme"],
+                            "PME Quebra (%)": round(res_b["q_pme"], 1),
+                            "PME Canc.": res_b["canc_pme"]
+                        })
+
+                    df_envio = pd.DataFrame(dados_consolidados)
+                    conn.update(spreadsheet=GOOGLE_SHEET_URL, data=df_envio)
+                    st.success("✅ Tabela consolidada da prévia sincronizada com sucesso no Google Sheets!")
                 else:
                     st.warning("⚠️ Nenhum dado processado encontrado para enviar.")
             except Exception as e:
