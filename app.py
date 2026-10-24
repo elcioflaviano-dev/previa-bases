@@ -982,7 +982,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             st.rerun()
 
 # ==============================================================================
-# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (COM HISTÓRICO DE PRÉVIAS ANTERIORES)
+# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (COM HISTÓRICO E SUPERVISORES)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
@@ -1303,6 +1303,95 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
     st.markdown("".join(tabela_html), unsafe_allow_html=True)
     st.markdown("<br><hr><br>", unsafe_allow_html=True)
+
+    # --- BLOCOS INDEPENDENTES POR BASE COM OS SUPERVISORES ---
+    st.markdown("### 🏢 Detalhamento Operacional Separado por Base")
+
+    for item in bases_config:
+        b_label = item["label"]
+        b_proj = item["projeto"]
+        m = metricas_bases[b_proj]
+        res_b = m["res"]
+        
+        with st.expander(f"📂 Base: {b_label} (Clique para Expandir/Recolher Detalhamento)"):
+            df_b = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()] if isinstance(df_valido, pd.DataFrame) and "Projeto" in df_valido.columns else pd.DataFrame()
+            if not df_b.empty and "Tipo de Serviço" in df_b.columns:
+                df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
+            sups_b = st.session_state.supervisores_por_base.get(b_proj, [])
+            
+            tabela_bloco_html = [
+                gerar_cabecalho_html(),
+                f'<tr class="tr-base">'
+                f'<td style="text-align: left; padding-left: 8px;">{b_label}</td>'
+                f'<td>{fmt_br(m["p_base"])}</td>'
+                f'<td class="col-destaque-amarelo">{fmt_br(m["m_base"])}</td>'
+                f'<td>{fmt_br(m["meta_os"])}</td>'
+                f'<td class="red-text">{fmt_br(m["proj_os"])}</td>'
+                f'<td>{fmt_br(m["meta_c"])}</td>'
+                f'<td class="red-text">{fmt_br(m["proj_c"])}</td>'
+                f'<td>{fmt_br(m["hoje_c"])}</td>'
+                f'<td>{fmt_br(m["os_consult"])}</td>'
+                f'<td>{fmt_br(res_b["tot_os"])}</td>'
+                f'<td>{fmt_br(res_b["os_aberta"])}</td>'
+                f'<td>{fmt_br(res_b["pontos"])}</td>'
+                f'<td>{fmt_br(res_b["efic"], 1)}%</td>'
+                f'<td class="col-destaque-azul">{fmt_br(res_b["media_os"], 2)}</td>'
+                f'<td>{fmt_br(res_b["proj_dia"])}</td>'
+                f'<td class="col-destaque-amarelo">{fmt_br(res_b["os_sem_c"])}</td>'
+                f'<td>{fmt_br(res_b["q_ins"], 1)}%</td>'
+                f'<td>{fmt_br(res_b["q_serv"], 1)}%</td>'
+                f'<td>{fmt_br(res_b["q_nd"], 1)}%</td>'
+                f'<td>{fmt_br(res_b["os_canc"])}</td>'
+                f'<td>{fmt_br(res_b["saiu_toa"])}</td>'
+                f'<td>{fmt_br(m["ganho"])}</td>'
+                f'<td>{fmt_br(res_b["tot_gpon"])}</td>'
+                f'<td>{fmt_br(res_b["q_gpon"], 1)}%</td>'
+                f'<td>{fmt_br(res_b["tot_mig"])}</td>'
+                f'<td>{fmt_br(res_b["q_mig"], 1)}%</td>'
+                f'<td>{fmt_br(res_b["canc_mig"])}</td>'
+                f'<td>{fmt_br(res_b["retorno_wo"])}</td>'
+                f'<td>{fmt_br(res_b["tot_pme"])}</td>'
+                f'<td>{fmt_br(res_b["q_pme"], 1)}%</td>'
+                f'<td>{fmt_br(res_b["canc_pme"])}</td>'
+                f'</tr>'
+            ]
+
+            for s in sups_b:
+                df_s = df_b[df_b["Supervisor"] == s] if not df_b.empty and "Supervisor" in df_b.columns else pd.DataFrame()
+                p_sup = st.session_state.get(f"p_{b_proj}_{s}", 0)
+                m_sup = st.session_state.get(f"m_{b_proj}_{s}", 20)
+                res_s = calcular_metricas(df_s, m_sup, 0)
+                primeiro_nome = s.split()[0]
+                
+                tabela_bloco_html.append(
+                    f'<tr class="tr-sup">'
+                    f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
+                    f'<td>{fmt_br(p_sup)}</td>'
+                    f'<td class="col-destaque-amarelo">{fmt_br(m_sup)}</td>'
+                    f'<td></td><td></td><td></td><td></td><td></td><td></td>'
+                    f'<td>{fmt_br(res_s["tot_os"])}</td>'
+                    f'<td>{fmt_br(res_s["os_aberta"])}</td>'
+                    f'<td>{fmt_br(res_s["pontos"])}</td>'
+                    f'<td>{fmt_br(res_s["efic"], 1)}%</td>'
+                    f'<td class="col-destaque-azul">{fmt_br(res_s["media_os"], 2)}</td>'
+                    f'<td>{fmt_br(res_s["proj_dia"])}</td>'
+                    f'<td></td>'
+                    f'<td>{fmt_br(res_s["q_ins"], 1)}%</td>'
+                    f'<td>{fmt_br(res_s["q_serv"], 1)}%</td>'
+                    f'<td>{fmt_br(res_s["q_nd"], 1)}%</td>'
+                    f'<td></td>'
+                    f'<td>{fmt_br(res_s["os_canc"])}</td>'
+                    f'<td>{fmt_br(res_s["saiu_toa"])}</td>'
+                    f'<td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
+                    f'<td>{fmt_br(res_s["tot_pme"])}</td>'
+                    f'<td>{fmt_br(res_s["q_pme"], 1)}%</td>'
+                    f'<td>{fmt_br(res_s["canc_pme"])}</td>'
+                    f'</tr>'
+                )
+
+            tabela_bloco_html.append('</tbody></table>')
+            st.markdown("".join(tabela_bloco_html), unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
 
     if st.session_state.get("df_aniel_full") is not None:
         try:
