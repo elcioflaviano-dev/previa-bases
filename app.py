@@ -26,7 +26,7 @@ def fmt_br(val, decimais=0):
             s = s.replace(",", "X").replace(".", ",").replace("X", ".")
             return s
         else:
-            return f"{int(round(float(val), 0)):,}".replace(",", ".")
+            return f"{int(round(float(val), 0)):,}".replace(".", ".")
     except Exception:
         return str(val)
 
@@ -75,67 +75,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- HISTÓRICO COMPLETO DE O.S. EXECUTADAS (ABA Historico_OS) ---
-HISTORICO_OUTUBRO = [
-    {"Data": "01/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 342},
-    {"Data": "01/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 415},
-    {"Data": "01/10/2026", "Base": "NET-LESTE", "OS_Executadas": 322},
-    {"Data": "02/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 339},
-    {"Data": "02/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 416},
-    {"Data": "02/10/2026", "Base": "NET-LESTE", "OS_Executadas": 431},
-    {"Data": "03/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 406},
-    {"Data": "03/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 390},
-    {"Data": "03/10/2026", "Base": "NET-LESTE", "OS_Executadas": 384},
-    {"Data": "05/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 356},
-    {"Data": "05/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 378},
-    {"Data": "05/10/2026", "Base": "NET-LESTE", "OS_Executadas": 370},
-    {"Data": "06/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 405},
-    {"Data": "06/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 387},
-    {"Data": "06/10/2026", "Base": "NET-LESTE", "OS_Executadas": 368},
-    {"Data": "07/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 384},
-    {"Data": "07/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 387},
-    {"Data": "07/10/2026", "Base": "NET-LESTE", "OS_Executadas": 375},
-    {"Data": "08/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 405},
-    {"Data": "08/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 417},
-    {"Data": "08/10/2026", "Base": "NET-LESTE", "OS_Executadas": 412},
-    {"Data": "09/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 411},
-    {"Data": "09/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 410},
-    {"Data": "09/10/2026", "Base": "NET-LESTE", "OS_Executadas": 433},
-    {"Data": "10/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 394},
-    {"Data": "10/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 432},
-    {"Data": "10/10/2026", "Base": "NET-LESTE", "OS_Executadas": 369},
-    {"Data": "12/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 194},
-    {"Data": "12/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 285},
-    {"Data": "12/10/2026", "Base": "NET-LESTE", "OS_Executadas": 334},
-    {"Data": "13/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 395},
-    {"Data": "13/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 421},
-    {"Data": "13/10/2026", "Base": "NET-LESTE", "OS_Executadas": 422},
-    {"Data": "14/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 363},
-    {"Data": "14/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 415},
-    {"Data": "14/10/2026", "Base": "NET-LESTE", "OS_Executadas": 399},
-    {"Data": "15/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 407},
-    {"Data": "15/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 472},
-    {"Data": "15/10/2026", "Base": "NET-LESTE", "OS_Executadas": 408},
-    {"Data": "16/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 359},
-    {"Data": "16/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 372},
-    {"Data": "16/10/2026", "Base": "NET-LESTE", "OS_Executadas": 349},
-    {"Data": "17/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 313},
-    {"Data": "17/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 382},
-    {"Data": "17/10/2026", "Base": "NET-LESTE", "OS_Executadas": 278},
-    {"Data": "19/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 392},
-    {"Data": "19/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 377},
-    {"Data": "19/10/2026", "Base": "NET-LESTE", "OS_Executadas": 419},
-    {"Data": "20/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 408},
-    {"Data": "20/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 423},
-    {"Data": "20/10/2026", "Base": "NET-LESTE", "OS_Executadas": 389},
-    {"Data": "21/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 366},
-    {"Data": "21/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 402},
-    {"Data": "21/10/2026", "Base": "NET-LESTE", "OS_Executadas": 409},
-    {"Data": "22/10/2026", "Base": "NET-ABCDM", "OS_Executadas": 325},
-    {"Data": "22/10/2026", "Base": "NET-Guarulhos", "OS_Executadas": 434},
-    {"Data": "22/10/2026", "Base": "NET-LESTE", "OS_Executadas": 382},
-]
-
 def normalizar_nome_base(val):
     s = str(val).strip().upper()
     if "ABC" in s:
@@ -167,9 +106,9 @@ def obter_df_historico():
             if df_h is not None and not df_h.empty:
                 st.session_state["df_historico_custom"] = df_h
             else:
-                st.session_state["df_historico_custom"] = pd.DataFrame(HISTORICO_OUTUBRO)
+                st.session_state["df_historico_custom"] = pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
         except Exception:
-            st.session_state["df_historico_custom"] = pd.DataFrame(HISTORICO_OUTUBRO)
+            st.session_state["df_historico_custom"] = pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
     return st.session_state["df_historico_custom"]
 
 def adicionar_historico_dia(data_str, base, os_exec):
@@ -183,7 +122,8 @@ def adicionar_historico_dia(data_str, base, os_exec):
 def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_hoje_str=None):
     base_norm = normalizar_nome_base(base_proj)
     df_b = obter_df_historico().copy()
-    df_b = df_b[df_b["Base"].astype(str).str.upper() == base_norm].copy()
+    if not df_b.empty and "Base" in df_b.columns:
+        df_b = df_b[df_b["Base"].astype(str).str.upper() == base_norm].copy()
     
     if data_hoje_str and os_hoje is not None and os_hoje > 0:
         if df_b.empty or not (df_b["Data"].astype(str) == str(data_hoje_str)).any():
@@ -904,7 +844,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
         st.markdown("---")
         
-        # --- BOTÃO DE SINCRONIZAÇÃO: SALVA OS. EXECUTADAS NA ABA Historico_OS E PRÉVIA NA ABA Previas_Diarias ---
+        # --- BOTÃO DE SINCRONIZAÇÃO: SALVA OS EXECUTADAS E A PRÉVIA COMPLETA COM TODAS AS COLUNAS ---
         if st.button("📊 Sincronizar Google Sheets e Gerar Prévia Executiva", type="primary"):
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -922,7 +862,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 df_hist_completo = obter_df_historico()
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS", data=df_hist_completo)
 
-                # 2. Salva o resumo da Prévia Diária na aba 'Previas_Diarias' (adicionando ao histórico)
+                # 2. Salva o resumo COMPLETO da Prévia Diária com TODAS as colunas na aba 'Previas_Diarias'
                 try:
                     df_previas_antigas = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
                     if df_previas_antigas is None:
@@ -931,6 +871,9 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     df_previas_antigas = pd.DataFrame()
 
                 novas_linhas_previa = []
+                dias_uteis = st.session_state.get("dias_uteis_auto", 27)
+                dias_trab = st.session_state.get("dias_trab_auto", 19)
+
                 for item in bases_config:
                     b_label = item["label"]
                     b_proj = item["projeto"]
@@ -941,13 +884,76 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     p_base = st.session_state.get(f"inp_par_{b_proj}", 4)
                     m_base = st.session_state.get(f"inp_mon_{b_proj}", 68)
                     meta_os_b = st.session_state.get(f"inp_meta_os_{b_proj}", 11800)
-                    
-                    res_b = {
-                        "tot_os": len(df_b),
-                        "os_aberta": len(df_b[df_b["Tipo de OS"] == "EM ABERTO"]),
-                        "produtivo": len(df_b[df_b["Tipo de OS"] == "PRODUTIVA"]),
-                        "pontos": int(round(df_b[df_b["Tipo de OS"] == "PRODUTIVA"]["Pontos Prev."].sum(), 0)) if "Pontos Prev." in df_b.columns else 0
-                    }
+                    meta_c_b = int(m_base * 8)
+                    hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 12)
+                    ganho_b = st.session_state.get(f"inp_ganho_{b_proj}", 27)
+
+                    def calc_exp_met(df_sub, montados, hoje_c):
+                        tot_os = len(df_sub)
+                        df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+                        df_improd = df_sub[df_sub["Tipo de OS"] == "IMPRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+                        df_aberto = df_sub[df_sub["Tipo de OS"] == "EM ABERTO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+                        df_canc = df_sub[df_sub["Tipo de OS"] == "CANCELADO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+                        df_saiu = df_sub[df_sub["Tipo de OS"] == "SAIU DO TOA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+
+                        prod_count = len(df_prod)
+                        improd_count = len(df_improd)
+                        aberta_count = len(df_aberto)
+                        
+                        den_quebra = improd_count + prod_count
+                        quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
+                        efic = max(0.0, 1.0 - quebra_pct)
+                        proj_os_exec = prod_count + (aberta_count * efic)
+                        proj_dia = int(round(proj_os_exec, 0))
+                        
+                        pontos = int(round(df_prod["Pontos Prev."].sum(), 0)) if "Pontos Prev." in df_prod.columns else 0
+                        media_os = (prod_count / montados) if montados > 0 else 0.0
+
+                        def c_sub(df_item):
+                            if "Tipo de OS" not in df_item.columns: return 0.0
+                            i = len(df_item[df_item["Tipo de OS"] == "IMPRODUTIVA"])
+                            p = len(df_item[df_item["Tipo de OS"] == "PRODUTIVA"])
+                            d = i + p
+                            return (i / d * 100) if d > 0 else 0.0
+
+                        df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
+                        df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
+                        df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
+                        df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
+                        df_ret = df_sub[df_sub["QUEBRAS"] == "RETORNO"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
+                        
+                        pme_col = df_sub["PME"].fillna("").astype(str).str.strip().str.upper() if "PME" in df_sub.columns else pd.Series()
+                        df_pme = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
+
+                        servicos_nd_alvos = ["ADESAO - INSTALACAO DE ASSINATURA", "ADESAO ENTREGA STREAMING", "ADESAO - INSTALACAO DE ASSINATURA DIGITAL"]
+                        ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
+                        df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
+                        nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
+                        nd_improd = len(df_nd_base[df_nd_base["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
+                        nd_aberto = len(df_nd_base[df_nd_base["Tipo de OS"] == "EM ABERTO"]) if "Tipo de OS" in df_nd_base.columns else 0
+                        den_nd = nd_improd + nd_prod
+                        efic_nd = max(0.0, 1.0 - (nd_improd / den_nd)) if den_nd > 0 else 0.0
+                        proj_nd = int(round(nd_prod + (nd_aberto * efic_nd), 0))
+
+                        return {
+                            "tot_os": tot_os, "os_aberta": aberta_count, "pontos": pontos,
+                            "efic": round(efic * 100, 1), "media_os": round(media_os, 2), "proj_dia": proj_dia,
+                            "q_ins": round(c_sub(df_ins), 1), "q_serv": round(c_sub(df_serv), 1),
+                            "tot_nd": proj_nd, "q_nd": round(c_sub(df_nd_base), 1),
+                            "os_canc": len(df_canc), "saiu_toa": len(df_saiu),
+                            "tot_gpon": len(df_gpon), "q_gpon": round(c_sub(df_gpon), 1),
+                            "tot_mig": len(df_mig), "q_mig": round(c_sub(df_mig), 1),
+                            "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_mig.columns else 0,
+                            "retorno_wo": len(df_ret), "tot_pme": len(df_pme),
+                            "q_pme": round(c_sub(df_pme), 1),
+                            "canc_pme": len(df_pme[df_pme["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_pme.columns else 0
+                        }
+
+                    res_b = calc_exp_met(df_b, m_base, hoje_c_b)
+                    proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"] if "produtivo" in res_b else 0, data_formatada)
+                    proj_c_b = int(round((hoje_c_b / dias_trab) * dias_uteis)) if dias_trab > 0 else 0
+                    os_consult_b = hoje_c_b * 2
+                    os_sem_consult_val = int(round(res_b["proj_dia"] - os_consult_b, 0))
 
                     novas_linhas_previa.append({
                         "Data": data_formatada,
@@ -955,10 +961,33 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         "Parados": p_base,
                         "Montados": m_base,
                         "Meta O.S.": meta_os_b,
+                        "Projeção O.S.": proj_os_b,
+                        "Meta Consultivo": meta_c_b,
+                        "Projeção Consultivo": proj_c_b,
+                        "Hoje Consultivo": hoje_c_b,
+                        "O.S. Consultivo": os_consult_b,
                         "Total O.S.": res_b["tot_os"],
                         "O.S. Aberta": res_b["os_aberta"],
                         "Pontos": res_b["pontos"],
-                        "O.S. Exec.": res_b["produtivo"]
+                        "Efic (%)": res_b["efic"],
+                        "Média O.S.": res_b["media_os"],
+                        "O.S. Exec. (Proj)": res_b["proj_dia"],
+                        "O.S. Sem Consult": os_sem_consult_val,
+                        "Quebra INS (%)": res_b["q_ins"],
+                        "Quebra SERV (%)": res_b["q_serv"],
+                        "Quebra ND (%)": res_b["q_nd"],
+                        "O.S. Canc.": res_b["os_canc"],
+                        "Saiu TOA": res_b["saiu_toa"],
+                        "Ganho O.S.": ganho_b,
+                        "GPON Total": res_b["tot_gpon"],
+                        "GPON Quebra (%)": res_b["q_gpon"],
+                        "Migração Total": res_b["tot_mig"],
+                        "Migração Quebra (%)": res_b["q_mig"],
+                        "Migração Canc.": res_b["canc_mig"],
+                        "Retorno WO": res_b["retorno_wo"],
+                        "PME WO": res_b["tot_pme"],
+                        "PME Quebra (%)": res_b["q_pme"],
+                        "PME Canc.": res_b["canc_pme"]
                     })
 
                 df_nova_previa = pd.DataFrame(novas_linhas_previa)
@@ -973,7 +1002,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     df_previa_final = df_nova_previa
 
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias", data=df_previa_final)
-                st.success("✅ Histórico de O.S. e Prévia Diária sincronizados com sucesso nas respetivas abas do Google Sheets!")
+                st.success("✅ Prévia diária completa (com todas as colunas) sincronizada com sucesso no Google Sheets!")
                 
             except Exception as e:
                 st.error(f"Erro ao conectar ou escrever no Google Sheets: {e}")
