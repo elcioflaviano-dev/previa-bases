@@ -5,6 +5,7 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(
     page_title="Painel Executivo - Prévia Diária",
@@ -19,7 +20,6 @@ def fmt_br(val, decimais=0):
             val = 0.0
         if decimais > 0:
             s = f"{float(val):,.{decimais}f}"
-            # Substitui ponto por vírgula nos decimais e vírgula por ponto nos milhares
             s = s.replace(",", "X").replace(".", ",").replace("X", ".")
             return s
         else:
@@ -539,7 +539,7 @@ DESC_OS_DICT = {
     "VISITA TECNICA - VOIP": "SERVIÇOS",
     "DESOBSTRUCAO - INSTALACAO PONTO ADICIONAL": "SERVIÇOS",
     "REINSTALACAO ENTREGA STREAMING": "SERVIÇOS",
-    "REINSTALACAO - SERVIÇO CONEXAO ADICIONAL": "SERVIÇOS",
+    "REINSTALACAO - SERVICO CONEXAO ADICIONAL": "SERVIÇOS",
     "BASE ENTREGA ADC STREAMING": "SERVIÇOS",
     "INSTALAR CABEAMENTO MESH": "INSTALAÇÃO",
     "REINSTALACAO ENTREGA ADC STREAMING": "SERVIÇOS",
@@ -898,12 +898,20 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         st.number_input(f"Parados: {sup}", value=def_p, key=f"p_{b_proj}_{sup}")
 
         st.markdown("---")
-        st.button(
-            "📊 Sincronizar Google Sheets e Gerar Prévia Executiva",
-            type="primary",
-            on_click=ir_para_passo_3,
-            key="btn_ir_previa"
-        )
+        
+        # --- BOTÃO DE SINCRONIZAÇÃO E ESCRITA DIRETA NO GOOGLE SHEETS ---
+        if st.button("📊 Sincronizar Google Sheets e Gerar Prévia Executiva", type="primary"):
+            try:
+                conn = st.connection("gsheets", type=GSheetsConnection)
+                if st.session_state.df_aniel_full is not None:
+                    conn.update(data=st.session_state.df_aniel_full)
+                    st.success("✅ Dados sincronizados com sucesso no Google Sheets!")
+                else:
+                    st.warning("⚠️ Nenhum dado processado encontrado para enviar.")
+            except Exception as e:
+                st.error(f"Erro ao conectar ou escrever no Google Sheets: {e}")
+            
+            ir_para_passo_3()
 
 # ==============================================================================
 # PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA
@@ -966,7 +974,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"]
             df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"]
             
-            # --- CÁLCULO DA PROJEÇÃO EXATA PARA A COLUNA ND ---
             servicos_nd_alvos = [
                 "ADESAO - INSTALACAO DE ASSINATURA",
                 "ADESAO ENTREGA STREAMING",
@@ -1012,7 +1019,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "_raw_q_mig": len(df_mig[df_mig["Tipo de OS"] == "IMPRODUTIVA"]),
                 "_raw_q_pme": len(df_pme[df_pme["Tipo de OS"] == "IMPRODUTIVA"])
             }
-        
+
         def gerar_cabecalho_html():
             return f"""
             <table class="custom-table">
