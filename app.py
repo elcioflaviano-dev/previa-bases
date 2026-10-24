@@ -158,12 +158,30 @@ bases_config = [
     {"label": "Leste", "projeto": "NET-LESTE"}
 ]
 
+# --- MENU LATERAL ---
 st.sidebar.title("Navegação")
 st.sidebar.radio(
     "Ir para:",
     etapas,
     key="pagina_atual"
 )
+
+# Se estivermos na página 3, adicionamos o seletor de data de forma discreta na barra lateral
+data_selecionada = None
+if st.session_state["pagina_atual"] == "3. Visualização da Prévia":
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📅 Histórico")
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df_historico_previas = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
+    except Exception:
+        df_historico_previas = pd.DataFrame()
+
+    if df_historico_previas is not None and not df_historico_previas.empty and "Data" in df_historico_previas.columns:
+        datas_disponiveis = sorted(df_historico_previas["Data"].astype(str).unique().tolist(), reverse=True)
+        data_selecionada = st.sidebar.selectbox("Selecionar Data:", datas_disponiveis)
+    else:
+        data_selecionada = st.session_state.get("data_formatada", "22/10/2026")
 
 def ler_arquivo_seguro(uploaded_file):
     uploaded_file.seek(0)
@@ -225,7 +243,7 @@ BAIXAS_DICT = {
     "106 - CLIENTE AUSENTE": "IMPRODUTIVA",
     "107 - ENTRADA NAO AUTORIZADA": "IMPRODUTIVA",
     "108 - Realizar Obra Civil ou alteracao rede eletrica": "IMPRODUTIVA",
-    "110 - PROBLEMA НА TUBULACAO": "IMPRODUTIVA",
+    "110 - PROBLEMA NA TUBULACAO": "IMPRODUTIVA",
     "112 - SEM ACESSO AO DG / SOTAO / COMODO": "IMPRODUTIVA",
     "113 - Sem TV / Computador Na Residencia/ Celular": "IMPRODUTIVA",
     "114 - Habilitação telefonica não ok": "IMPRODUTIVA",
@@ -851,13 +869,19 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
         st.markdown("---")
         
-        # --- BOTÃO DE SINCRONIZAÇÃO COM APPEND SEGURO PARA PRESERVAR O HISTÓRICO ---
+        # --- BOTÃO DE SINCRONIZAÇÃO SEGURO COM LEITURA E APPEND PARA NÃO APAGAR NADA ---
         if st.button("📊 Sincronizar Google Sheets e Gerar Prévia Executiva", type="primary"):
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 
-                # 1. ADICIONAR APENAS AS O.S. DO DIA ATUAL NO FINAL DA ABA 'Historico_OS'
-                novas_os_linhas = []
+                # 1. ATUALIZAR ABA 'Historico_OS' (Lê o que tem, remove o dia se já existir para atualizar, e grava completo)
+                try:
+                    df_hist_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS")
+                    if df_hist_sheet is None:
+                        df_hist_sheet = pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
+                except Exception:
+                    df_hist_sheet = pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
+
                 for item in bases_config:
                     b_proj = item["projeto"]
                     df_b = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()]
@@ -867,17 +891,22 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     base_norm = normalizar_nome_base(b_proj)
                     
                     if prod_hoje > 0:
-                        novas_os_linhas.append({
-                            "Data": str(data_formatada), 
-                            "Base": base_norm, 
-                            "OS_Executadas": int(prod_hoje)
-                        })
+                        if not df_hist_sheet.empty and "Data" in df_hist_sheet.columns and "Base" in df_hist_sheet.columns:
+                            df_hist_sheet = df_hist_sheet[~((df_hist_sheet["Data"].astype(str) == str(data_formatada)) & (df_hist_sheet["Base"].astype(str).str.upper() == base_norm))]
+                        nova_h = pd.DataFrame([{"Data": str(data_formatada), "Base": base_norm, "OS_Executadas": int(prod_hoje)}])
+                        df_hist_sheet = pd.concat([df_hist_sheet, nova_h], ignore_index=True)
 
-                if novas_os_linhas:
-                    df_novo_registro_os = pd.DataFrame(novas_os_linhas)
-                    conn.append(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS", data=df_novo_registro_os)
+                conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS", data=df_hist_sheet)
+                st.session_state["df_historico_custom"] = df_hist_sheet
 
-                # 2. ADICIONAR A PRÉVIA COMPLETA NA ABA 'Previas_Diarias'
+                # 2. ATUALIZAR ABA 'Previas_Diarias' (Lê o que tem, remove o dia se já existir para atualizar, e grava completo)
+                try:
+                    df_previas_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
+                    if df_previas_sheet is None:
+                        df_previas_sheet = pd.DataFrame()
+                except Exception:
+                    df_previas_sheet = pd.DataFrame()
+
                 novas_linhas_previa = []
                 dias_uteis = st.session_state.get("dias_uteis_auto", 27)
                 dias_trab = st.session_state.get("dias_trab_auto", 19)
@@ -998,11 +1027,19 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         "PME Canc.": res_b["canc_pme"]
                     })
 
-                if novas_linhas_previa:
-                    df_nova_previa = pd.DataFrame(novas_linhas_previa)
-                    conn.append(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias", data=df_nova_previa)
+                df_nova_previa = pd.DataFrame(novas_linhas_previa)
+                
+                if not df_previas_sheet.empty and "Data" in df_previas_sheet.columns and "Base" in df_previas_sheet.columns:
+                    df_previas_sheet = df_previas_sheet[
+                        ~((df_previas_sheet["Data"].astype(str) == str(data_formatada)) & 
+                          (df_previas_sheet["Base"].isin([b["label"] for b in bases_config])))
+                    ]
+                    df_previa_final = pd.concat([df_previas_sheet, df_nova_previa], ignore_index=True)
+                else:
+                    df_previa_final = df_nova_previa
 
-                st.success("✅ Novos dados adicionados ao histórico com sucesso nas duas abas do Google Sheets!")
+                conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias", data=df_previa_final)
+                st.success("✅ Histórico preservado e prévia completa sincronizada com sucesso no Google Sheets!")
                 
             except Exception as e:
                 st.error(f"Erro ao conectar ou escrever no Google Sheets: {e}")
@@ -1015,18 +1052,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
-
-    try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        df_historico_previas = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
-    except Exception:
-        df_historico_previas = pd.DataFrame()
-
-    if df_historico_previas is not None and not df_historico_previas.empty and "Data" in df_historico_previas.columns:
-        datas_disponiveis = sorted(df_historico_previas["Data"].astype(str).unique().tolist(), reverse=True)
-        data_selecionada = st.selectbox("📅 Consultar Histórico de Prévia Diária:", datas_disponiveis)
-    else:
-        data_selecionada = st.session_state.get("data_formatada", "22/10/2026")
 
     df_valido = st.session_state.df_valido if st.session_state.df_valido is not None else obter_df_historico()
     dias_uteis = st.session_state.get("dias_uteis_auto", 27)
@@ -1415,7 +1440,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
     if st.session_state.get("df_aniel_full") is not None:
         try:
-            df_export = st.session_state["df_aniel_full"]
+            df_export = st.session_state["df_anxl_full"] if "df_anxl_full" in st.session_state else st.session_state["df_aniel_full"]
             if not df_export.empty:
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine="openpyxl") as writer:
