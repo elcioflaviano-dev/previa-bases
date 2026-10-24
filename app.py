@@ -1075,6 +1075,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             improd_count = len(df_improd)
             aberta_count = len(df_aberto)
             
+            # Correção da variável declarada aqui:
+            os_aberta = aberta_count
+            
             den_quebra = improd_count + prod_count
             quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
             efic = max(0.0, 1.0 - quebra_pct)
@@ -1085,6 +1088,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             pontos_total = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
             pontos = int(round(pontos_total, 0))
             media_os = (prod_count / montados) if montados > 0 else 0.0
+            os_canc = len(df_canc)
+            saiu_toa = len(df_saiu)
 
             def calc_q_sub(df_item):
                 if "Tipo de OS" not in df_item.columns: return 0.0
@@ -1118,7 +1123,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
-                "os_canc": len(df_canc), "saiu_toa": len(df_saiu),
+                "os_canc": os_canc, "saiu_toa": saiu_toa,
                 "q_ins": calc_q_sub(df_ins), "q_serv": calc_q_sub(df_serv),
                 "tot_nd": proj_nd, "q_nd": calc_q_sub(df_nd_base),
                 "tot_gpon": len(df_gpon), "q_gpon": calc_q_sub(df_gpon),
