@@ -962,8 +962,15 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         proj_os_exec = prod_count + (aberta_count * efic)
                         proj_dia = int(round(proj_os_exec, 0))
                         
-                        # CORREÇÃO DOS PONTOS: Soma correta do campo Pontos Prev. de todo o subconjunto válido
-                        pontos = int(round(df_sub["Pontos Prev."].sum(), 0)) if "Pontos Prev." in df_sub.columns else 0
+                        # --- CÁLCULO EXATO DE PONTOS COM PROJEÇÃO ---
+                        pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
+                        pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
+                        pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
+                        
+                        den_pts = pontos_improd + pontos_prod
+                        efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
+                        pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
+                        
                         media_os = (prod_count / montados) if montados > 0 else 0.0
 
                         def c_sub(df_item):
@@ -1107,9 +1114,14 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             proj_os_exec = prod_count + (aberta_count * efic)
             proj_dia = int(round(proj_os_exec, 0))
             
-            # CORREÇÃO DOS PONTOS: Soma correta do campo Pontos Prev. em todo o DataFrame filtrado
-            pontos_total = df_sub["Pontos Prev."].sum() if "Pontos Prev." in df_sub.columns else 0.0
-            pontos = int(round(pontos_total, 0))
+            # --- CÁLCULO EXATO DE PONTOS COM PROJEÇÃO ---
+            pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
+            pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
+            pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
+            
+            den_pts = pontos_improd + pontos_prod
+            efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
+            pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
             
             media_os = (prod_count / montados) if montados > 0 else 0.0
             
