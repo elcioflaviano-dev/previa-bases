@@ -735,28 +735,12 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                     st.session_state.df_aniel_full = df_aniel
 
                     # --- EXTRAÇÃO RIGOROSA DE SUPERVISORES POR PROJETO/BASE (COM FILTRO DE LIMPEZA) ---
-                    # Lista de supervisores conhecidos de ABCDM para evitar vazamento para Leste/Guarulhos
-                    sups_abmdm_permitidos = [
-                        "EDSON MARCO PINHEIRO", "MAICON APARECIDO FARIA", 
-                        "NELSON ALVES OLIVEIRA JUNIOR", "APOIO SÃO PAULO"
-                    ]
-                    sups_leste_permitidos = [
-                        "ALAN DE ANDRADE DIAS", "ELISANGELA CASSIMIRO GONCALVES", 
-                        "FRANCISCO GERALDO CARVALHO JUNIOR", "JOAO CARLOS FERREIRA MIRON"
-                    ]
-                    sups_guarulhos_permitidos = [
-                        "ADRIANO NASCIMENTO DA SILVA", "DANIELE BARBOSA DE OLIVEIRA", 
-                        "FERNANDO CESAR COELHO RAMOS", "PALOMA REGINA SILVA BATISTA"
-                    ]
-
                     sup_map = {}
                     for item in bases_config:
                         b_proj = item["projeto"]
-                        # Filtra estritamente pelo projeto do ANIEL
                         df_base_temp = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()]
                         sups_brutos = sorted(df_base_temp["Supervisor"].unique().tolist())
                         
-                        # Limpa nomes errados ou que pertençam a outra base por engano no ANIEL
                         sups_filtrados = []
                         for s in sups_brutos:
                             s_up = str(s).strip().upper()
@@ -875,29 +859,42 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
         st.markdown("---")
         
-        # --- BOTÃO DE SINCRONIZAÇÃO: SALVA OS EXECUTADAS E A PRÉVIA COMPLETA COM TODAS AS COLUNAS ---
+        # --- BOTÃO DE SINCRONIZAÇÃO: PRESERVA HISTÓRICO NAS DUAS ABAS DO SHEETS ---
         if st.button("📊 Sincronizar Google Sheets e Gerar Prévia Executiva", type="primary"):
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 
+                # 1. ATUALIZAR ABA 'Historico_OS' PRESERVANDO DIAS ANTERIORES
+                try:
+                    df_hist_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS")
+                    if df_hist_sheet is None or df_hist_sheet.empty:
+                        df_hist_sheet = pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
+                except Exception:
+                    df_hist_sheet = pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
+
                 for item in bases_config:
                     b_proj = item["projeto"]
                     df_b = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()]
                     if "Tipo de Serviço" in df_b.columns:
                         df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
                     prod_hoje = len(df_b[df_b["Tipo de OS"] == "PRODUTIVA"])
+                    base_norm = normalizar_nome_base(b_proj)
                     
-                    adicionar_historico_dia(data_formatada, b_proj, prod_hoje)
+                    if prod_hoje > 0:
+                        df_hist_sheet = df_hist_sheet[~((df_hist_sheet["Data"].astype(str) == str(data_formatada)) & (df_hist_sheet["Base"].astype(str).str.upper() == base_norm))]
+                        nova_h = pd.DataFrame([{"Data": str(data_formatada), "Base": base_norm, "OS_Executadas": int(prod_hoje)}])
+                        df_hist_sheet = pd.concat([df_hist_sheet, nova_h], ignore_index=True)
 
-                df_hist_completo = obter_df_historico()
-                conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS", data=df_hist_completo)
+                conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS", data=df_hist_sheet)
+                st.session_state["df_historico_custom"] = df_hist_sheet
 
+                # 2. ATUALIZAR ABA 'Previas_Diarias' PRESERVANDO DIAS ANTERIORES
                 try:
-                    df_previas_antigas = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
-                    if df_previas_antigas is None:
-                        df_previas_antigas = pd.DataFrame()
+                    df_previas_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
+                    if df_previas_sheet is None or df_previas_sheet.empty:
+                        df_previas_sheet = pd.DataFrame()
                 except Exception:
-                    df_previas_antigas = pd.DataFrame()
+                    df_previas_sheet = pd.DataFrame()
 
                 novas_linhas_previa = []
                 dias_uteis = st.session_state.get("dias_uteis_auto", 27)
@@ -1021,17 +1018,17 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
                 df_nova_previa = pd.DataFrame(novas_linhas_previa)
                 
-                if not df_previas_antigas.empty and "Data" in df_previas_antigas.columns and "Base" in df_previas_antigas.columns:
-                    df_previas_antigas = df_previas_antigas[
-                        ~((df_previas_antigas["Data"].astype(str) == data_formatada) & 
-                          (df_previas_antigas["Base"].isin([b["label"] for b in bases_config])))
+                if not df_previas_sheet.empty and "Data" in df_previas_sheet.columns and "Base" in df_previas_sheet.columns:
+                    df_previas_sheet = df_previas_sheet[
+                        ~((df_previas_sheet["Data"].astype(str) == str(data_formatada)) & 
+                          (df_previas_sheet["Base"].isin([b["label"] for b in bases_config])))
                     ]
-                    df_previa_final = pd.concat([df_previas_antigas, df_nova_previa], ignore_index=True)
+                    df_previa_final = pd.concat([df_previas_sheet, df_nova_previa], ignore_index=True)
                 else:
                     df_previa_final = df_nova_previa
 
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias", data=df_previa_final)
-                st.success("✅ Prévia diária completa sincronizada com sucesso no Google Sheets!")
+                st.success("✅ Histórico preservado e prévia completa sincronizada com sucesso no Google Sheets!")
                 
             except Exception as e:
                 st.error(f"Erro ao conectar ou escrever no Google Sheets: {e}")
@@ -1118,7 +1115,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_pme = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
 
             return {
-                "tot_os": tot_os, "os_aberta": aberta_count, "produtivo": prod_count,
+                "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_canc": len(df_canc), "saiu_toa": len(df_saiu),
