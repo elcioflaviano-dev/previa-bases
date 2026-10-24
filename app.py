@@ -525,7 +525,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (TOTALIZAÇÃO AUTOMÁTICA)
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (TOTALIZAÇÃO AUTOMÁTICA DE MONTADOS)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -582,14 +582,17 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 else:
                     st.info(f"Nenhum supervisor encontrado para o projeto {b_proj} no arquivo ANIEL carregado.")
 
-                totais_bases_calc[b_proj] = {"montados": soma_m_base, "parados": soma_p_base}
-
                 st.markdown("---")
                 c1, c2, c3, c4 = st.columns(4)
                 
                 with c1:
-                    st.markdown(f"**Total Montados (Automático):**\n### {fmt_br(soma_m_base)}")
+                    # Total Montados: Editável, mas carregando o valor salvo no Sheets (dia anterior) por padrão
+                    def_montados_base = int(df_b_eq["Montados"].sum()) if not df_b_eq.empty and "Montados" in df_b_eq.columns else soma_m_base
+                    montados_val = st.number_input(f"Total Montados ({b_label})", value=def_montados_base, key=f"inp_mon_{b_proj}")
+                    
+                    # Total Parados: Automático pela soma dos parados dos supervisores
                     st.markdown(f"**Total Parados (Automático):**\n### {fmt_br(soma_p_base)}")
+                    totais_bases_calc[b_proj] = {"montados": montados_val, "parados": soma_p_base}
                 
                 with c2:
                     meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=11800 if "ABCDM" in b_proj else 12200, key=f"inp_meta_os_{b_proj}")
@@ -603,16 +606,17 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Projeção de O.S. (Mês):**\n### {fmt_br(proj_os_val)}\n*(Média: {fmt_br(media_d, 0)}/dia em {qtd_d} dias)*")
 
                 with c3:
-                    meta_cons_auto = int(soma_m_base * 8)
+                    meta_cons_auto = int(montados_val * 8)
                     st.markdown(f"**Meta do Consultivo (Automático):**\n### {fmt_br(meta_cons_auto)}")
                     st.session_state[f"inp_meta_c_{b_proj}"] = meta_cons_auto
 
-                    hoje_cons_temp = st.session_state.get(f"inp_hoje_c_{b_proj}", 12 if "ABCDM" in b_proj else (19 if "Guarulhos" in b_proj else 39))
-                    proj_cons_val = int(round((hoje_cons_temp / max(1, dias_trab_auto)) * dias_uteis_auto, 0))
+                    hoje_cons_temp = 0  # Nasce zerado conforme solicitado
+                    proj_cons_val = 0
                     st.markdown(f"**Projeção do Consultivo:**\n### {fmt_br(proj_cons_val)}")
 
                 with c4:
-                    hoje_cons_val = st.number_input(f"Hoje Consultivo (Total do Dia) ({b_label})", value=hoje_cons_temp, key=f"inp_hoje_c_{b_proj}")
+                    # Hoje Consultivo: Nasce zerado por padrão e é colocado à mão
+                    hoje_cons_val = st.number_input(f"Hoje Consultivo (Total do Dia) ({b_label})", value=0, key=f"inp_hoje_c_{b_proj}")
                     os_consult_val = hoje_cons_val * 2
                     st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
 
@@ -718,11 +722,11 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
                     
                     t_base = totais_bases_calc.get(b_proj, {"montados": 68, "parados": 4})
-                    m_base = t_base["montados"]
+                    m_base = st.session_state.get(f"inp_mon_{b_proj}", t_base["montados"])
                     p_base = t_base["parados"]
                     meta_os_b = st.session_state.get(f"inp_meta_os_{b_proj}", 11800)
                     meta_c_b = int(m_base * 8)
-                    hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 12)
+                    hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 0)
                     ganho_b = 27 if "ABCDM" in b_proj else (40 if "Guarulhos" in b_proj else 42)
 
                     def calc_exp_met(df_sub, montados, hoje_c):
@@ -945,7 +949,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_pme = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
 
             return {
-                "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
+                "tot_os": tot_os, "os_aberta": aberta_count, "produtivo": prod_count,
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_canc": os_canc, "saiu_toa": saiu_toa,
