@@ -296,7 +296,6 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                     df_aniel = ler_arquivo_seguro(up_aniel)
                     df_aniel.columns = [str(c).strip() for c in df_aniel.columns]
 
-                    # Extrair data do ANIEL se houver coluna de data/agendamento
                     data_aniel_str = ""
                     col_data_aniel = next((c for c in df_aniel.columns if "data" in c.lower() or "agendamento" in c.lower()), None)
                     if col_data_aniel:
@@ -304,7 +303,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                         if not datas_a.empty:
                             data_aniel_str = datas_a.iloc[0].strftime("%d/%m/%Y")
 
-                    df_proj = next((c for c in df_aniel.columns if c.lower() == "projeto"), "Projeto")
+                    col_proj = next((c for c in df_aniel.columns if c.lower() == "projeto"), "Projeto")
                     if col_proj in df_aniel.columns:
                         df_aniel = df_aniel[
                             ~df_aniel[col_proj].astype(str).str.upper().str.contains(r"\bVT\b|VT", regex=True, na=False)
@@ -517,7 +516,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                     st.error(f"Erro ao processar: {e}")
 
     if st.session_state.processado_sucesso and st.session_state.df_valido is not None:
-        st.success("✅ Arquivos validados (mesma data) e processados com sucesso!")
+        st.success("✅ Arquivos validados e processados com sucesso!")
         st.button(
             "Ir para Dados Operacionais ➡️",
             type="primary",
@@ -526,7 +525,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (COM SOMA AUTOMÁTICA DE PARADOS E MONTADOS)
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (TOTALIZAÇÃO AUTOMÁTICA)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -553,8 +552,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         df_config_eq = carregar_config_equipe()
 
         tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
-        
-        # Dicionários para guardar os totais somados por base em tempo real
         totais_bases_calc = {}
 
         for i, item in enumerate(bases_config):
@@ -591,7 +588,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 c1, c2, c3, c4 = st.columns(4)
                 
                 with c1:
-                    # Totais automáticos vindos da soma dos supervisores
                     st.markdown(f"**Total Montados (Automático):**\n### {fmt_br(soma_m_base)}")
                     st.markdown(f"**Total Parados (Automático):**\n### {fmt_br(soma_p_base)}")
                 
@@ -747,7 +743,15 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         proj_os_exec = prod_count + (aberta_count * efic)
                         proj_dia = int(round(proj_os_exec, 0))
                         
-                        pontos = int(round(df_sub["Pontos Prev."].sum(), 0)) if "Pontos Prev." in df_sub.columns else 0
+                        # --- FÓRMULA CORRETA DE PONTOS COM PROJEÇÃO ---
+                        pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
+                        pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
+                        pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
+                        
+                        den_pts = pontos_improd + pontos_prod
+                        efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
+                        pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
+                        
                         media_os = (proj_dia / montados) if montados > 0 else 0.0
 
                         def c_sub_quebra(df_item, tipo_quebra_desejada):
@@ -758,9 +762,8 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                             d_c = i_c + p_c
                             return (i_c / d_c * 100) if d_c > 0 else 0.0
 
-                        q_ins_val = c_sub_quebra(df_sub, "INSTALAÇÃO")
-                        q_serv_val = c_sub_quebra(df_sub, "SERVIÇOS")
-
+                        df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
+                        df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
                         df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
                         df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
                         df_ret = df_sub[df_sub["QUEBRAS"] == "RETORNO"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
@@ -786,7 +789,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         return {
                             "tot_os": tot_os, "os_aberta": aberta_count, "pontos": pontos,
                             "efic": round(efic * 100, 1), "media_os": round(media_os, 2), "proj_dia": proj_dia,
-                            "q_ins": round(q_ins_val, 1), "q_serv": round(q_serv_val, 1),
+                            "q_ins": c_sub_quebra(df_sub, "INSTALAÇÃO"), "q_serv": c_sub_quebra(df_sub, "SERVIÇOS"),
                             "tot_nd": proj_nd, "q_nd": c_sub_quebra(df_nd_base, "INSTALAÇÃO"),
                             "os_canc": len(df_canc), "saiu_toa": len(df_saiu),
                             "tot_gpon": len(df_gpon), "q_gpon": c_sub_quebra(df_gpon, "SERVIÇOS"),
@@ -895,7 +898,14 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             proj_os_exec = prod_count + (aberta_count * efic)
             proj_dia = int(round(proj_os_exec, 0))
             
-            pontos = int(round(df_sub["Pontos Prev."].sum(), 0)) if "Pontos Prev." in df_sub.columns else 0
+            pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
+            pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
+            pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
+            
+            den_pts = pontos_improd + pontos_prod
+            efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
+            pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
+            
             media_os = (proj_dia / montados) if montados > 0 else 0.0
             
             os_canc = len(df_canc)
@@ -1123,7 +1133,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     g_media_os = (g_proj_exec_total / g_montados) if g_montados > 0 else 0.0
     g_os_sem_c_total = g_proj_exec_total - g_os_cons
     
-    # Médias ponderadas gerais para as quebras do totalizador
     tot_ins_geral = sum([m["res"]["_raw_tot_ins"] for m in metricas_bases.values()])
     q_ins_geral = (sum([m["res"]["_raw_q_ins"] for m in metricas_bases.values()]) / tot_ins_geral * 100) if tot_ins_geral > 0 else 0.0
 
