@@ -734,11 +734,46 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                     st.session_state.df_valido = df_valido
                     st.session_state.df_aniel_full = df_aniel
 
+                    # --- EXTRAÇÃO RIGOROSA DE SUPERVISORES POR PROJETO/BASE (COM FILTRO DE LIMPEZA) ---
+                    # Lista de supervisores conhecidos de ABCDM para evitar vazamento para Leste/Guarulhos
+                    sups_abmdm_permitidos = [
+                        "EDSON MARCO PINHEIRO", "MAICON APARECIDO FARIA", 
+                        "NELSON ALVES OLIVEIRA JUNIOR", "APOIO SÃO PAULO"
+                    ]
+                    sups_leste_permitidos = [
+                        "ALAN DE ANDRADE DIAS", "ELISANGELA CASSIMIRO GONCALVES", 
+                        "FRANCISCO GERALDO CARVALHO JUNIOR", "JOAO CARLOS FERREIRA MIRON"
+                    ]
+                    sups_guarulhos_permitidos = [
+                        "ADRIANO NASCIMENTO DA SILVA", "DANIELE BARBOSA DE OLIVEIRA", 
+                        "FERNANDO CESAR COELHO RAMOS", "PALOMA REGINA SILVA BATISTA"
+                    ]
+
                     sup_map = {}
                     for item in bases_config:
                         b_proj = item["projeto"]
-                        sups = sorted(df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()]["Supervisor"].unique().tolist())
-                        sup_map[b_proj] = sups
+                        # Filtra estritamente pelo projeto do ANIEL
+                        df_base_temp = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()]
+                        sups_brutos = sorted(df_base_temp["Supervisor"].unique().tolist())
+                        
+                        # Limpa nomes errados ou que pertençam a outra base por engano no ANIEL
+                        sups_filtrados = []
+                        for s in sups_brutos:
+                            s_up = str(s).strip().upper()
+                            if "ABCDM" in b_proj.upper():
+                                if any(sub in s_up for sub in ["EDSON", "MAICON", "NELSON", "APOIO"]):
+                                    sups_filtrados.append(s_up)
+                            elif "LESTE" in b_proj.upper():
+                                if any(sub in s_up for sub in ["ALAN", "ELISANGELA", "FRANCISCO", "JOAO CARLOS", "MIRON"]):
+                                    sups_filtrados.append(s_up)
+                            elif "GUARULHOS" in b_proj.upper():
+                                if any(sub in s_up for sub in ["ADRIANO", "DANIELE", "FERNANDO", "PALOMA"]):
+                                    sups_filtrados.append(s_up)
+                            else:
+                                sups_filtrados.append(s_up)
+                                
+                        sup_map[b_proj] = sorted(list(set(sups_filtrados)))
+
                     st.session_state.supervisores_por_base = sup_map
                     st.session_state.processado_sucesso = True
 
@@ -781,15 +816,9 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         st.session_state["data_formatada"] = data_formatada
 
         defaults = {
-            "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "hoje_cons": 12, "ganho_os": 27,
-                          "sup_parados": {"EDSON MARCO PINHEIRO": 3, "MAICON APARECIDO FARIA": 1, "NELSON ALVES OLIVEIRA JUNIOR": 0, "APOIO SÃO PAULO": 0},
-                          "sup_montados": {"EDSON MARCO PINHEIRO": 23, "MAICON APARECIDO FARIA": 22, "NELSON ALVES OLIVEIRA JUNIOR": 23, "APOIO SÃO PAULO": 0}},
-            "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "hoje_cons": 19, "ganho_os": 40,
-                              "sup_parados": {"ADRIANO NASCIMENTO DA SILVA": 0, "DANIELE BARBOSA DE OLIVEIRA": 3, "FERNANDO CESAR COELHO RAMOS": 2, "PALOMA REGINA SILVA BATISTA": 1},
-                              "sup_montados": {"ADRIANO NASCIMENTO DA SILVA": 20, "DANIELE BARBOSA DE OLIVEIRA": 20, "FERNANDO CESAR COELHO RAMOS": 19, "PALOMA REGINA SILVA BATISTA": 19}},
-            "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "hoje_cons": 39, "ganho_os": 42,
-                          "sup_parados": {"ALAN DE ANDRADE DIAS": 2, "ELISANGELA CASSIMIRO GONCALVES": 0, "FRANCISCO GERALDO CARVALHO JUNIOR": 0, "JOAO CARLOS FERREIRA MIRON": 3},
-                          "sup_montados": {"ALAN DE ANDRADE DIAS": 26, "ELISANGELA CASSIMIRO GONCALVES": 11, "FRANCISCO GERALDO CARVALHO JUNIOR": 26, "JOAO CARLOS FERREIRA MIRON": 17}}
+            "NET-ABCDM": {"parados": 4, "montados": 68, "meta_os": 11800, "hoje_cons": 12, "ganho_os": 27},
+            "NET-Guarulhos": {"parados": 6, "montados": 76, "meta_os": 12200, "hoje_cons": 19, "ganho_os": 40},
+            "NET-LESTE": {"parados": 5, "montados": 80, "meta_os": 12200, "hoje_cons": 39, "ganho_os": 42}
         }
 
         tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
@@ -831,16 +860,18 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
 
                 st.markdown("---")
-                st.markdown(f"##### 👥 Equipa de Supervisores (Montados e Parados):")
+                st.markdown(f"##### 👥 Equipa de Supervisores da Base {b_label} (Extraídos estritamente do ANIEL):")
                 sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
-                col_s1, col_s2 = st.columns(2)
-                for sup in sups_base:
-                    def_p = d.get("sup_parados", {}).get(sup, 0)
-                    def_m = d.get("sup_montados", {}).get(sup, 20)
-                    with col_s1:
-                        st.number_input(f"Montados: {sup}", value=def_m, key=f"m_{b_proj}_{sup}")
-                    with col_s2:
-                        st.number_input(f"Parados: {sup}", value=def_p, key=f"p_{b_proj}_{sup}")
+                
+                if sups_base:
+                    col_s1, col_s2 = st.columns(2)
+                    for sup in sups_base:
+                        with col_s1:
+                            st.number_input(f"Montados: {sup}", value=20, key=f"m_{b_proj}_{sup}")
+                        with col_s2:
+                            st.number_input(f"Parados: {sup}", value=0, key=f"p_{b_proj}_{sup}")
+                else:
+                    st.info(f"Nenhum supervisor encontrado para o projeto {b_proj} no arquivo ANIEL carregado.")
 
         st.markdown("---")
         
@@ -849,7 +880,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 
-                # 1. Atualiza e salva o Histórico de O.S. Executadas na aba 'Historico_OS'
                 for item in bases_config:
                     b_proj = item["projeto"]
                     df_b = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()]
@@ -862,7 +892,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 df_hist_completo = obter_df_historico()
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS", data=df_hist_completo)
 
-                # 2. Salva o resumo COMPLETO da Prévia Diária com TODAS as colunas na aba 'Previas_Diarias'
                 try:
                     df_previas_antigas = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
                     if df_previas_antigas is None:
@@ -1002,7 +1031,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     df_previa_final = df_nova_previa
 
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias", data=df_previa_final)
-                st.success("✅ Prévia diária completa (com todas as colunas) sincronizada com sucesso no Google Sheets!")
+                st.success("✅ Prévia diária completa sincronizada com sucesso no Google Sheets!")
                 
             except Exception as e:
                 st.error(f"Erro ao conectar ou escrever no Google Sheets: {e}")
@@ -1033,19 +1062,12 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     dias_trab = st.session_state.get("dias_trab_auto", 19)
     data_formatada = data_selecionada
 
-    servicos_nd = [
-        "ADESAO ENTREGA STREAMING",
-        "ADESAO - INSTALACAO DE ASSINATURA",
-        "ADESAO - INSTALACAO DE ASSINATURA DIGITAL"
-    ]
-
     def calcular_metricas(df_sub, montados, hoje_c):
         if isinstance(df_sub, pd.DataFrame) and not df_sub.empty:
             if "Tipo de Serviço" in df_sub.columns:
                 df_sub = df_sub[~df_sub["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)].copy()
 
             tot_os = len(df_sub)
-            
             df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
             df_improd = df_sub[df_sub["Tipo de OS"] == "IMPRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
             df_aberto = df_sub[df_sub["Tipo de OS"] == "EM ABERTO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
@@ -1065,12 +1087,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             
             pontos_total = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
             pontos = int(round(pontos_total, 0))
-
             media_os = (prod_count / montados) if montados > 0 else 0.0
-            
-            os_canc = len(df_canc)
-            saiu_toa = len(df_saiu)
-            os_aberta = aberta_count
 
             def calc_q_sub(df_item):
                 if "Tipo de OS" not in df_item.columns: return 0.0
@@ -1082,21 +1099,15 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
             df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
             
-            servicos_nd_alvos = [
-                "ADESAO - INSTALACAO DE ASSINATURA",
-                "ADESAO ENTREGA STREAMING",
-                "ADESAO - INSTALACAO DE ASSINATURA DIGITAL"
-            ]
+            servicos_nd_alvos = ["ADESAO - INSTALACAO DE ASSINATURA", "ADESAO ENTREGA STREAMING", "ADESAO - INSTALACAO DE ASSINATURA DIGITAL"]
             ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
             df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
             
             nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
             nd_improd = len(df_nd_base[df_nd_base["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
             nd_aberto = len(df_nd_base[df_nd_base["Tipo de OS"] == "EM ABERTO"]) if "Tipo de OS" in df_nd_base.columns else 0
-            
             den_nd = nd_improd + nd_prod
-            quebra_nd = (nd_improd / den_nd) if den_nd > 0 else 0.0
-            efic_nd = max(0.0, 1.0 - quebra_nd)
+            efic_nd = max(0.0, 1.0 - (nd_improd / den_nd)) if den_nd > 0 else 0.0
             proj_nd = int(round(nd_prod + (nd_aberto * efic_nd), 0))
 
             df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
@@ -1107,10 +1118,10 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_pme = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
 
             return {
-                "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
+                "tot_os": tot_os, "os_aberta": aberta_count, "produtivo": prod_count,
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
-                "os_canc": os_canc, "saiu_toa": saiu_toa,
+                "os_canc": len(df_canc), "saiu_toa": len(df_saiu),
                 "q_ins": calc_q_sub(df_ins), "q_serv": calc_q_sub(df_serv),
                 "tot_nd": proj_nd, "q_nd": calc_q_sub(df_nd_base),
                 "tot_gpon": len(df_gpon), "q_gpon": calc_q_sub(df_gpon),
