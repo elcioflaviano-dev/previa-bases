@@ -119,13 +119,20 @@ def obter_df_historico():
     return st.session_state["df_historico_custom"]
 
 def buscar_os_inicial_sheets(base_proj, data_str):
-    """Busca estritamente da coluna OS_Inicial no Sheets (Historico_OS). Retorna 0 se não encontrar."""
-    base_norm = normalizar_nome_base(base_proj)
+    """Busca tolerante e flexível de OS_Inicial no Sheets (Historico_OS) independente de maiúsculas/minúsculas ou prefixos."""
+    base_norm = normalizar_nome_base(base_proj).upper()
+    palavra_chave = "ABC" if "ABC" in base_norm else ("GUARULHOS" if "GUA" in base_norm or "GRU" in base_norm else "LESTE")
+    
     df_h = obter_df_historico()
     if not df_h.empty and "Data" in df_h.columns and "Base" in df_h.columns and "OS_Inicial" in df_h.columns:
-        match = df_h[(df_h["Data"].astype(str) == str(data_str)) & (df_h["Base"].astype(str).str.upper() == base_norm)]
+        # Tenta primeiro correspondência exata de data e base normalizada
+        match = df_h[(df_h["Data"].astype(str).str.strip() == str(data_str).strip()) & (df_h["Base"].astype(str).str.strip().str.upper() == base_norm)]
+        if match.empty:
+            # Tenta busca flexível por palavra-chave da base e mesma data
+            match = df_h[(df_h["Data"].astype(str).str.strip() == str(data_str).strip()) & (df_h["Base"].astype(str).str.strip().str.upper().str.contains(palavra_chave))]
+        
         if not match.empty:
-            val = match.iloc[0]["OS_Inicial"]
+            val = match.iloc[-1]["OS_Inicial"]
             if pd.notna(val) and str(val).strip() != "":
                 try:
                     return int(float(val))
@@ -573,7 +580,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             with tabs[i]:
                 df_b_eq = df_config_eq[df_config_eq["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq.empty else pd.DataFrame()
                 
-                # --- ROTA INICIAL COMO PRIMEIRO CAMPO (LENDO DIRETAMENTE DO SHEETS) ---
+                # --- ROTA INICIAL COMO PRIMEIRO CAMPO (LENDO DIRETAMENTE DO SHEETS DE FORMA TOLERANTE) ---
                 os_inicial_sheets = buscar_os_inicial_sheets(b_proj, data_formatada)
                 st.markdown(f"##### 📈 1. Dados de Ganho de O.S. ({b_label}):")
                 rota_inicial_val = st.number_input(f"Total O.S. Rota Inicial ({b_label})", value=os_inicial_sheets, key=f"inp_rota_{b_proj}")
@@ -640,7 +647,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 
-                # 1. ATUALIZAR ABA 'Historico_OS' (LENDO EXATAMENTE O INPUT DA ROTA INICIAL)
+                # 1. ATUALIZAR ABA 'Historico_OS' (GRAVANDO EXATAMENTE O VALOR DO INPUT DA ROTA INICIAL)
                 try:
                     df_hist_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS")
                     if df_hist_sheet is None:
@@ -721,7 +728,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_Equipe", data=df_hist_eq_final)
 
-                # 4. ATUALIZAR ABA 'Previas_Diarias' (LENDO EXATAMENTE O INPUT DO PASSO 2 E APLICANDO MAX(0, ...))
+                # 4. ATUALIZAR ABA 'Previas_Diarias' (LENDO EXATAMENTE O INPUT DO PASSO 2)
                 try:
                     df_previas_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
                     if df_previas_sheet is None:
@@ -1080,10 +1087,10 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         
         tot_os_previa_b = len(df_b)
         
-        # --- BUSCA O VALOR DE OS_INICIAL DIRETAMENTE DO SHEETS PARA O CÁLCULO ---
+        # --- BUSCA EXATAMENTE DO SHEETS O VALOR DA ROTA INICIAL SALVA ---
         rota_inicial_b = buscar_os_inicial_sheets(b_proj, data_formatada)
         
-        # --- CÁLCULO DO GANHO DE O.S. (MAX(0, TOTAL PREVIA - OS_INICIAL)) ---
+        # --- CÁLCULO EXATO COM TRAVA ABSOLUTA PARA 0 SE MENOR QUE ROTA INICIAL ---
         ganho_b = max(0, tot_os_previa_b - rota_inicial_b)
 
         res_b = calcular_metricas(df_b, m_base, hoje_c_b)
@@ -1250,7 +1257,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 f'<td>{fmt_br(res_b["os_aberta"])}</td>'
                 f'<td>{fmt_br(res_b["pontos"])}</td>'
                 f'<td>{fmt_br(res_b["efic"], 1)}%</td>'
-                f'<td class="col-destaque-azul">{fmt_br(res_b["media_os"], 2)}</td>'
+                f'<td class="col-destaque-azul">{fmt_br(res_s["media_os"] if "res_s" in locals() and not pd.isna(res_s["media_os"]) else res_b["media_os"], 2)}</td>'
                 f'<td>{fmt_br(res_b["proj_dia"])}</td>'
                 f'<td class="col-destaque-amarelo">{fmt_br(res_b["os_sem_c"])}</td>'
                 f'<td>{fmt_br(res_b["q_ins"], 1)}%</td>'
