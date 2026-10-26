@@ -590,11 +590,9 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 c1, c2, c3, c4 = st.columns(4)
                 
                 with c1:
-                    # Total Montados: Editável, buscando o valor do dia anterior salvo no Sheets
                     def_montados_base = int(df_b_eq["Montados"].sum()) if not df_b_eq.empty and "Montados" in df_b_eq.columns else (68 if "ABCDM" in b_proj else (76 if "Guarulhos" in b_proj else 80))
                     montados_val = st.number_input(f"Total Montados ({b_label})", value=def_montados_base, key=f"inp_mon_{b_proj}")
                     
-                    # Total Parados: Automático pela soma dos parados dos supervisores
                     st.markdown(f"**Total Parados (Automático):**\n### {fmt_br(soma_p_base)}")
                     totais_bases_calc[b_proj] = {"montados": montados_val, "parados": soma_p_base}
                 
@@ -618,7 +616,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Projeção do Consultivo:**\n### {fmt_br(proj_cons_val)}")
 
                 with c4:
-                    # Hoje Consultivo: Nasce zerado e é colocado à mão
                     hoje_cons_val = st.number_input(f"Hoje Consultivo (Total do Dia) ({b_label})", value=0, key=f"inp_hoje_c_{b_proj}")
                     os_consult_val = hoje_cons_val * 2
                     st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
@@ -750,6 +747,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         proj_os_exec = prod_count + (aberta_count * efic)
                         proj_dia = int(round(proj_os_exec, 0))
                         
+                        # --- FÓRMULA EXATA DE PONTOS COM PROJEÇÃO ---
                         pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
                         pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
                         pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
@@ -904,6 +902,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             proj_os_exec = prod_count + (aberta_count * efic)
             proj_dia = int(round(proj_os_exec, 0))
             
+            # --- FÓRMULA EXATA DE PONTOS COM PROJEÇÃO ---
             pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
             pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
             pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
