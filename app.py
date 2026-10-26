@@ -8,7 +8,7 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(
-    page_title="Painel Executivo - Prévia Diária",
+    page_title="Painel Prévia Diária",
     page_icon="📊",
     layout="wide"
 )
@@ -149,12 +149,13 @@ def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_h
     if not df_b.empty and "Data" in df_b.columns:
         df_b = df_b.drop_duplicates(subset=["Data", "_base_norm_"], keep="last")
 
-    if data_hoje_str and os_hoje is not None and os_hoje > 0:
-        if df_b.empty or not (df_b["Data"].astype(str) == str(data_hoje_str)).any():
+    # Atualiza ou insere o dia atual (data_hoje_str) com o valor produtivo de hoje no cálculo da projeção
+    if data_hoje_str and os_hoje is not None and os_hoje >= 0:
+        if df_b.empty or not (df_b["Data"].astype(str).str.strip() == str(data_hoje_str).strip()).any():
             nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_hoje), "OS_Inicial": 0}])
             df_b = pd.concat([df_b, nova], ignore_index=True)
         else:
-            df_b.loc[df_b["Data"].astype(str) == str(data_hoje_str), "OS_Executadas"] = int(os_hoje)
+            df_b.loc[df_b["Data"].astype(str).str.strip() == str(data_hoje_str).strip(), "OS_Executadas"] = int(os_hoje)
 
     if not df_b.empty:
         soma_total = pd.to_numeric(df_b["OS_Executadas"], errors="coerce").sum()
@@ -650,7 +651,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 
-                # 1. ATUALIZAR ABA 'Historico_OS' (COM LIMPEZA RIGOROSA DE DUPLICADOS)
+                # 1. ATUALIZAR ABA 'Historico_OS' (SUBSTITUIÇÃO LIMPA SEM DUPLICAR)
                 try:
                     df_hist_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS")
                     if df_hist_sheet is None:
@@ -671,7 +672,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     if prod_hoje > 0:
                         if not df_hist_sheet.empty and "Data" in df_hist_sheet.columns and "Base" in df_hist_sheet.columns:
                             df_hist_sheet["_base_norm_"] = df_hist_sheet["Base"].apply(normalizar_nome_base).str.upper()
-                            # Remove TUDO o que for da mesma data e base normalizada para nunca duplicar
                             df_hist_sheet = df_hist_sheet[~(
                                 (df_hist_sheet["Data"].astype(str).str.strip() == str(data_formatada).strip()) & 
                                 (df_hist_sheet["_base_norm_"] == base_norm.upper())
@@ -909,7 +909,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 # PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (LENDO EXATAMENTE DO SHEETS O GANHO)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
-    st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
+    st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Vídeo")
 
     df_valido = st.session_state.df_valido if st.session_state.df_valido is not None else obter_df_historico()
     dias_uteis = st.session_state.get("dias_uteis_auto", 27)
@@ -1097,11 +1097,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         hoje_c_b = 0
         
         tot_os_previa_b = len(df_b)
-        
-        # --- BUSCA EXATAMENTE DO SHEETS O VALOR DA ROTA INICIAL SALVA ---
         rota_inicial_b = buscar_os_inicial_sheets(b_proj, data_formatada)
-        
-        # --- CÁLCULO EXATO COM TRAVA ABSOLUTA PARA 0 SE MENOR QUE ROTA INICIAL ---
         ganho_b = max(0, tot_os_previa_b - rota_inicial_b)
 
         res_b = calcular_metricas(df_b, m_base, hoje_c_b)
@@ -1109,6 +1105,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         os_sem_consult_val = int(round(res_b["proj_dia"] - (hoje_c_b * 2), 0))
         res_b["os_sem_c"] = os_sem_consult_val
 
+        # --- Garante que a projeção calcula com base nas O.S. produtivas de hoje ---
         proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
         
         proj_c_b = 0
@@ -1132,7 +1129,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             "os_consult": os_consult_b, "ganho": ganho_b, "label": b_label
         }
 
-    # --- TABELA PRINCIPAL CONSOLIDADA DA DIRETORIA ---
+    # --- TABELA PRINCIPAL CONSOLIDADA VIDEO ---
     tabela_html = [gerar_cabecalho_html()]
 
     for item in bases_config:
