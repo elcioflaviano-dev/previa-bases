@@ -202,6 +202,12 @@ bases_config = [
     {"label": "Leste", "projeto": "NET-LESTE"}
 ]
 
+# --- MENU LATERAL E LOGO ---
+try:
+    st.sidebar.image("novo-logo-totale.png", use_container_width=True)
+except Exception:
+    pass
+
 st.sidebar.title("Navegação")
 st.sidebar.radio(
     "Ir para:",
@@ -525,7 +531,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (TOTALIZAÇÃO AUTOMÁTICA DE MONTADOS)
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -563,7 +569,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 st.markdown(f"##### 👥 Equipa de Supervisores da Base {b_label} (Pré-preenchidos do Sheets):")
                 sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
                 
-                soma_m_base = 0
                 soma_p_base = 0
 
                 if sups_base:
@@ -574,8 +579,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         p_def = int(sup_eq["Parados"].values[0]) if not sup_eq.empty and pd.notna(sup_eq["Parados"].values[0]) else 0
 
                         with col_s1:
-                            val_m = st.number_input(f"Montados: {sup}", value=m_def, key=f"m_{b_proj}_{sup}")
-                            soma_m_base += val_m
+                            st.number_input(f"Montados: {sup}", value=m_def, key=f"m_{b_proj}_{sup}")
                         with col_s2:
                             val_p = st.number_input(f"Parados: {sup}", value=p_def, key=f"p_{b_proj}_{sup}")
                             soma_p_base += val_p
@@ -586,8 +590,8 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 c1, c2, c3, c4 = st.columns(4)
                 
                 with c1:
-                    # Total Montados: Editável, mas carregando o valor salvo no Sheets (dia anterior) por padrão
-                    def_montados_base = int(df_b_eq["Montados"].sum()) if not df_b_eq.empty and "Montados" in df_b_eq.columns else soma_m_base
+                    # Total Montados: Editável, buscando o valor do dia anterior salvo no Sheets
+                    def_montados_base = int(df_b_eq["Montados"].sum()) if not df_b_eq.empty and "Montados" in df_b_eq.columns else (68 if "ABCDM" in b_proj else (76 if "Guarulhos" in b_proj else 80))
                     montados_val = st.number_input(f"Total Montados ({b_label})", value=def_montados_base, key=f"inp_mon_{b_proj}")
                     
                     # Total Parados: Automático pela soma dos parados dos supervisores
@@ -610,12 +614,11 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Meta do Consultivo (Automático):**\n### {fmt_br(meta_cons_auto)}")
                     st.session_state[f"inp_meta_c_{b_proj}"] = meta_cons_auto
 
-                    hoje_cons_temp = 0  # Nasce zerado conforme solicitado
                     proj_cons_val = 0
                     st.markdown(f"**Projeção do Consultivo:**\n### {fmt_br(proj_cons_val)}")
 
                 with c4:
-                    # Hoje Consultivo: Nasce zerado por padrão e é colocado à mão
+                    # Hoje Consultivo: Nasce zerado e é colocado à mão
                     hoje_cons_val = st.number_input(f"Hoje Consultivo (Total do Dia) ({b_label})", value=0, key=f"inp_hoje_c_{b_proj}")
                     os_consult_val = hoje_cons_val * 2
                     st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
@@ -747,7 +750,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         proj_os_exec = prod_count + (aberta_count * efic)
                         proj_dia = int(round(proj_os_exec, 0))
                         
-                        # --- FÓRMULA CORRETA DE PONTOS COM PROJEÇÃO ---
                         pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
                         pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
                         pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
@@ -949,7 +951,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_pme = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
 
             return {
-                "tot_os": tot_os, "os_aberta": aberta_count, "produtivo": prod_count,
+                "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_canc": os_canc, "saiu_toa": saiu_toa,
@@ -1054,7 +1056,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
         meta_os_b = 11800 if "ABCDM" in b_proj else 12200
         meta_c_b = int(m_base * 8)
-        hoje_c_b = 12 if "ABCDM" in b_proj else (19 if "Guarulhos" in b_proj else 39)
+        hoje_c_b = 0
         ganho_b = 27 if "ABCDM" in b_proj else (40 if "Guarulhos" in b_proj else 42)
 
         res_b = calcular_metricas(df_b, m_base, hoje_c_b)
@@ -1064,8 +1066,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
         proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
         
-        proj_c_b = int(round((hoje_c_b / dias_trab) * dias_uteis)) if dias_trab > 0 else 0
-        os_consult_b = hoje_c_b * 2
+        proj_c_b = 0
+        os_consult_b = 0
 
         g_parados += p_base; g_montados += m_base; g_meta_os += meta_os_b; g_proj_os += proj_os_b
         g_meta_cons += meta_c_b; g_proj_cons += proj_c_b; g_hoje_cons += hoje_c_b; g_os_cons += os_consult_b
