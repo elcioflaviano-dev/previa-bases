@@ -119,7 +119,7 @@ def obter_df_historico():
     return st.session_state["df_historico_custom"]
 
 def buscar_os_inicial_sheets(base_proj, data_str):
-    """Busca o valor de OS_Inicial diretamente do Sheets (Historico_OS) para a base e data informada."""
+    """Busca o valor de OS_Inicial diretamente do Sheets (Historico_OS). Retorna 0 se não encontrar."""
     base_norm = normalizar_nome_base(base_proj)
     df_h = obter_df_historico()
     if not df_h.empty and "Data" in df_h.columns and "Base" in df_h.columns and "OS_Inicial" in df_h.columns:
@@ -131,7 +131,7 @@ def buscar_os_inicial_sheets(base_proj, data_str):
                     return int(float(val))
                 except Exception:
                     pass
-    return 0 if "ABC" in base_proj.upper() else (0 if "GUA" in base_proj.upper() or "GRU" in base_proj.upper() else 0)
+    return 0
 
 def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_hoje_str=None):
     base_norm = normalizar_nome_base(base_proj)
@@ -628,10 +628,10 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
 
                 st.markdown("---")
-                # --- BUSCA OS_INICIAL DIRETAMENTE DO HISTÓRICO DO SHEETS PARA PRÉ-PREENCHER ---
-                os_inicial_def = buscar_os_inicial_sheets(b_proj, data_formatada)
+                # --- BUSCA EXCLUSIVA DO SHEETS (OU 0 SE NENHUM GRAVADO AINDA) ---
+                os_inicial_sheets = buscar_os_inicial_sheets(b_proj, data_formatada)
                 st.markdown(f"##### 📈 Dados de Ganho de O.S. ({b_label}):")
-                rota_inicial_val = st.number_input(f"Total O.S. Rota Inicial ({b_label})", value=os_inicial_def, key=f"inp_rota_{b_proj}")
+                rota_inicial_val = st.number_input(f"Total O.S. Rota Inicial ({b_label})", value=os_inicial_sheets, key=f"inp_rota_{b_proj}")
 
         st.markdown("---")
         
@@ -640,7 +640,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 
-                # 1. ATUALIZAR ABA 'Historico_OS' (COM OS_Inicial E TRATAMENTO DE NEGATIVOS PARA 0)
+                # 1. ATUALIZAR ABA 'Historico_OS' (GRAVANDO O VALOR DIGITADO/LIDO DO INPUT)
                 try:
                     df_hist_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS")
                     if df_hist_sheet is None:
@@ -655,7 +655,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
                     prod_hoje = len(df_b[df_b["Tipo de OS"] == "PRODUTIVA"])
                     base_norm = normalizar_nome_base(b_proj)
-                    rota_val = int(st.session_state.get(f"inp_rota_{b_proj}", 518))
+                    rota_val = int(st.session_state.get(f"inp_rota_{b_proj}", 0))
                     
                     if prod_hoje > 0:
                         if not df_hist_sheet.empty and "Data" in df_hist_sheet.columns and "Base" in df_hist_sheet.columns:
@@ -721,7 +721,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_Equipe", data=df_hist_eq_final)
 
-                # 4. ATUALIZAR ABA 'Previas_Diarias' (COM MAX(0, ...) PARA GARANTIR ZERO SE NEGATIVO)
+                # 4. ATUALIZAR ABA 'Previas_Diarias' (LENDO EXATAMENTE O INPUT DO PASSO 2 E APLICANDO MAX(0, ...))
                 try:
                     df_previas_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
                     if df_previas_sheet is None:
@@ -747,9 +747,9 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     meta_c_b = int(m_base * 8)
                     hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 0)
                     
-                    # --- CÁLCULO EXATO COM TRAVA DE ZERO PARA NEGATIVOS ---
+                    # --- CÁLCULO EXATO USANDO O INPUT DO PASSO 2 E TRAVA DE NEGATIVOS PARA 0 ---
                     tot_os_previa_b = len(df_b)
-                    rota_inicial_b = int(st.session_state.get(f"inp_rota_{b_proj}", 518))
+                    rota_inicial_b = int(st.session_state.get(f"inp_rota_{b_proj}", 0))
                     ganho_b = max(0, tot_os_previa_b - rota_inicial_b)
 
                     def calc_exp_met(df_sub, montados, hoje_c):
@@ -1081,7 +1081,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         tot_os_previa_b = len(df_b)
         rota_inicial_b = buscar_os_inicial_sheets(b_proj, data_formatada)
         
-        # --- TRAVA ABSOLUTA: SE PREVIA MENOR QUE ROTA INICIAL, GANHO É 0 ---
+        # --- CÁLCULO EXATO COM TRAVA ABSOLUTA PARA 0 SE MENOR QUE ROTA INICIAL ---
         ganho_b = max(0, tot_os_previa_b - rota_inicial_b)
 
         res_b = calcular_metricas(df_b, m_base, hoje_c_b)
