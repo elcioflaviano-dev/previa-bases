@@ -622,7 +622,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 
-                # 1. ATUALIZAR ABA 'Historico_OS' (COM OS_Inicial E TRAVA DE NEGATIVOS NO GANHO)
+                # 1. ATUALIZAR ABA 'Historico_OS' (COM OS_Inicial E TRATAMENTO DE NEGATIVOS)
                 try:
                     df_hist_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS")
                     if df_hist_sheet is None:
@@ -729,7 +729,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     meta_c_b = int(m_base * 8)
                     hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 0)
                     
-                    # --- CÁLCULO EXATO COM TRAVA DE ZERO PARA NEGATIVOS ---
+                    # --- TRAVA DE ZERO PARA GANHO NEGATIVO ---
                     tot_os_previa_b = len(df_b)
                     rota_inicial_b = int(st.session_state.get(f"inp_rota_{b_proj}", 518))
                     ganho_b = max(0, tot_os_previa_b - rota_inicial_b)
