@@ -119,7 +119,7 @@ def obter_df_historico():
     return st.session_state["df_historico_custom"]
 
 def buscar_os_inicial_sheets(base_proj, data_str):
-    """Busca o valor de OS_Inicial diretamente do Sheets (Historico_OS). Retorna 0 se não encontrar."""
+    """Busca estritamente do Sheets (Historico_OS). Retorna 0 se não houver registo."""
     base_norm = normalizar_nome_base(base_proj)
     df_h = obter_df_historico()
     if not df_h.empty and "Data" in df_h.columns and "Base" in df_h.columns and "OS_Inicial" in df_h.columns:
@@ -537,7 +537,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (ROTA INICIAL COMO PRIMEIRO CAMPO)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -573,7 +573,13 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             with tabs[i]:
                 df_b_eq = df_config_eq[df_config_eq["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq.empty else pd.DataFrame()
                 
-                st.markdown(f"##### 👥 Equipa de Supervisores da Base {b_label} (Pré-preenchidos do Sheets):")
+                # --- ROTA INICIAL COMO PRIMEIRO CAMPO A SER PREENCHIDO ---
+                os_inicial_sheets = buscar_os_inicial_sheets(b_proj, data_formatada)
+                st.markdown(f"##### 📈 1. Dados de Ganho de O.S. ({b_label}):")
+                rota_inicial_val = st.number_input(f"Total O.S. Rota Inicial ({b_label})", value=os_inicial_sheets, key=f"inp_rota_{b_proj}")
+                
+                st.markdown("---")
+                st.markdown(f"##### 👥 2. Equipa de Supervisores da Base {b_label} (Pré-preenchidos do Sheets):")
                 sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
                 
                 soma_p_base = 0
@@ -627,12 +633,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     os_consult_val = hoje_cons_val * 2
                     st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
 
-                st.markdown("---")
-                # --- BUSCA EXCLUSIVA DO SHEETS (OU 0 SE NENHUM GRAVADO AINDA) ---
-                os_inicial_sheets = buscar_os_inicial_sheets(b_proj, data_formatada)
-                st.markdown(f"##### 📈 Dados de Ganho de O.S. ({b_label}):")
-                rota_inicial_val = st.number_input(f"Total O.S. Rota Inicial ({b_label})", value=os_inicial_sheets, key=f"inp_rota_{b_proj}")
-
         st.markdown("---")
         
         # --- BOTÃO DE SINCRONIZAÇÃO SEGURO COM ESCRITA NO GOOGLE SHEETS ---
@@ -640,7 +640,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 
-                # 1. ATUALIZAR ABA 'Historico_OS' (GRAVANDO O VALOR DIGITADO/LIDO DO INPUT)
+                # 1. ATUALIZAR ABA 'Historico_OS' (GRAVANDO EXATAMENTE O VALOR DO INPUT DA ROTA INICIAL)
                 try:
                     df_hist_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS")
                     if df_hist_sheet is None:
@@ -721,7 +721,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_Equipe", data=df_hist_eq_final)
 
-                # 4. ATUALIZAR ABA 'Previas_Diarias' (LENDO EXATAMENTE O INPUT DO PASSO 2 E APLICANDO MAX(0, ...))
+                # 4. ATUALIZAR ABA 'Previas_Diarias' (LENDO EXATAMENTE O INPUT DO PASSO 2)
                 try:
                     df_previas_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
                     if df_previas_sheet is None:
@@ -971,7 +971,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_pme = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
 
             return {
-                "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
+                "tot_os": tot_os, "os_aberta": aberta_count, "produtivo": prod_count,
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_canc": os_canc, "saiu_toa": saiu_toa,
