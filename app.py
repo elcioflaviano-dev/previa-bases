@@ -113,19 +113,10 @@ def obter_df_historico():
             if df_h is not None and not df_h.empty:
                 st.session_state["df_historico_custom"] = df_h
             else:
-                st.session_state["df_historico_custom"] = pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
+                st.session_state["df_historico_custom"] = pd.DataFrame(columns=["Data", "Base", "OS_Executadas", "OS_Inicial"])
         except Exception:
-            st.session_state["df_historico_custom"] = pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
+            st.session_state["df_historico_custom"] = pd.DataFrame(columns=["Data", "Base", "OS_Executadas", "OS_Inicial"])
     return st.session_state["df_historico_custom"]
-
-def adicionar_historico_dia(data_str, base, os_exec):
-    df_hist = obter_df_historico()
-    base_norm = normalizar_nome_base(base)
-    if os_exec > 0:
-        if not df_hist.empty and "Data" in df_hist.columns and "Base" in df_hist.columns:
-            df_hist = df_hist[~((df_hist["Data"].astype(str) == str(data_str)) & (df_hist["Base"].astype(str).str.upper() == base_norm))]
-        nova_linha = pd.DataFrame([{"Data": str(data_str), "Base": base_norm, "OS_Executadas": int(os_exec)}])
-        st.session_state["df_historico_custom"] = pd.concat([df_hist, nova_linha], ignore_index=True)
 
 def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_hoje_str=None):
     base_norm = normalizar_nome_base(base_proj)
@@ -135,7 +126,7 @@ def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_h
     
     if data_hoje_str and os_hoje is not None and os_hoje > 0:
         if df_b.empty or not (df_b["Data"].astype(str) == str(data_hoje_str)).any():
-            nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_hoje)}])
+            nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_hoje), "OS_Inicial": 0}])
             df_b = pd.concat([df_b, nova], ignore_index=True)
         else:
             df_b.loc[df_b["Data"].astype(str) == str(data_hoje_str), "OS_Executadas"] = int(os_hoje)
@@ -631,13 +622,13 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 
-                # 1. ATUALIZAR ABA 'Historico_OS'
+                # 1. ATUALIZAR ABA 'Historico_OS' (INCLUINDO OS_Inicial)
                 try:
                     df_hist_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS")
                     if df_hist_sheet is None:
-                        df_hist_sheet = pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
+                        df_hist_sheet = pd.DataFrame(columns=["Data", "Base", "OS_Executadas", "OS_Inicial"])
                 except Exception:
-                    df_hist_sheet = pd.DataFrame(columns=["Data", "Base", "OS_Executadas"])
+                    df_hist_sheet = pd.DataFrame(columns=["Data", "Base", "OS_Executadas", "OS_Inicial"])
 
                 for item in bases_config:
                     b_proj = item["projeto"]
@@ -646,11 +637,17 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
                     prod_hoje = len(df_b[df_b["Tipo de OS"] == "PRODUTIVA"])
                     base_norm = normalizar_nome_base(b_proj)
+                    rota_val = int(st.session_state.get(f"inp_rota_{b_proj}", 518))
                     
                     if prod_hoje > 0:
                         if not df_hist_sheet.empty and "Data" in df_hist_sheet.columns and "Base" in df_hist_sheet.columns:
                             df_hist_sheet = df_hist_sheet[~((df_hist_sheet["Data"].astype(str) == str(data_formatada)) & (df_hist_sheet["Base"].astype(str).str.upper() == base_norm))]
-                        nova_h = pd.DataFrame([{"Data": str(data_formatada), "Base": base_norm, "OS_Executadas": int(prod_hoje)}])
+                        nova_h = pd.DataFrame([{
+                            "Data": str(data_formatada), 
+                            "Base": base_norm, 
+                            "OS_Executadas": int(prod_hoje),
+                            "OS_Inicial": int(rota_val)
+                        }])
                         df_hist_sheet = pd.concat([df_hist_sheet, nova_h], ignore_index=True)
 
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS", data=df_hist_sheet)
@@ -732,10 +729,10 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     meta_c_b = int(m_base * 8)
                     hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 0)
                     
-                    # --- CÁLCULO EXATO DO GANHO DE O.S. (TOTAL O.S. DA PRÉVIA - ROTA INICIAL DIGITADA) ---
+                    # --- CÁLCULO EXATO DO GANHO DE O.S. (LENDO O INPUT CORRETO) ---
                     tot_os_previa_b = len(df_b)
-                    rota_inicial_b = st.session_state.get(f"inp_rota_{b_proj}", 0)
-                    ganho_b = max(0, tot_os_previa_b - int(rota_inicial_b))
+                    rota_inicial_b = int(st.session_state.get(f"inp_rota_{b_proj}", 518))
+                    ganho_b = max(0, tot_os_previa_b - rota_inicial_b)
 
                     def calc_exp_met(df_sub, montados, hoje_c):
                         tot_os = len(df_sub)
