@@ -33,7 +33,7 @@ def fmt_br(val, decimais=0):
             s = s.replace(",", "X").replace(".", ",").replace("X", ".")
             return s
         else:
-            return f"{int(round(float(val), 0)):,}".replace(",", ".")
+            return f"{int(round(float(val), 0)):,}".replace(".", ".")
     except Exception:
         return str(val)
 
@@ -118,6 +118,16 @@ def obter_df_historico():
             st.session_state["df_historico_custom"] = pd.DataFrame(columns=["Data", "Base", "OS_Executadas", "OS_Inicial"])
     return st.session_state["df_historico_custom"]
 
+def obter_df_historico_consultivo():
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df_c = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_Consultivo")
+        if df_c is not None and not df_c.empty:
+            return df_c
+    except Exception:
+        pass
+    return pd.DataFrame(columns=["Data", "Base", "Qtd_Consultivo"])
+
 def buscar_os_inicial_sheets(base_proj, data_str):
     base_norm = normalizar_nome_base(base_proj).upper()
     palavra_chave = "ABC" if "ABC" in base_norm else ("GUARULHOS" if "GUA" in base_norm or "GRU" in base_norm else "LESTE")
@@ -165,6 +175,33 @@ def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_h
     if not df_b.empty:
         soma_total = pd.to_numeric(df_b["OS_Executadas"], errors="coerce").sum()
         qtd_dias = max(1, df_b["Data"].nunique())
+        media_diaria = soma_total / qtd_dias
+        projecao = int(round(media_diaria * dias_uteis_mes, 0))
+        return projecao, media_diaria, qtd_dias
+        
+    return 0, 0.0, 1
+
+def calcular_projecao_consultivo_base(base_proj, dias_uteis_mes=27, consultivo_hoje=None, data_hoje_str=None):
+    base_norm = normalizar_nome_base(base_proj)
+    df_c = obter_df_historico_consultivo().copy()
+    
+    if not df_c.empty and "Base" in df_c.columns:
+        df_c["_base_norm_"] = df_c["Base"].apply(normalizar_nome_base)
+        df_c = df_c[df_c["_base_norm_"].astype(str).str.upper() == base_norm.upper()].copy()
+    
+    if not df_c.empty and "Data" in df_c.columns:
+        df_c = df_c.drop_duplicates(subset=["Data", "_base_norm_"], keep="last")
+
+    if data_hoje_str and consultivo_hoje is not None and consultivo_hoje >= 0:
+        if df_c.empty or not (df_c["Data"].astype(str).str.strip() == str(data_hoje_str).strip()).any():
+            nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "Qtd_Consultivo": int(consultivo_hoje)}])
+            df_c = pd.concat([df_c, nova], ignore_index=True)
+        else:
+            df_c.loc[df_c["Data"].astype(str).str.strip() == str(data_hoje_str).strip(), "Qtd_Consultivo"] = int(consultivo_hoje)
+
+    if not df_c.empty:
+        soma_total = pd.to_numeric(df_c["Qtd_Consultivo"], errors="coerce").sum()
+        qtd_dias = max(1, df_c["Data"].nunique())
         media_diaria = soma_total / qtd_dias
         projecao = int(round(media_diaria * dias_uteis_mes, 0))
         return projecao, media_diaria, qtd_dias
@@ -329,7 +366,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     img_valores_montados = {"NET-ABCDM": 68, "NET-Guarulhos": 82, "NET-LESTE": 80}
     
     if img_upload is not None:
-        st.success("🖼️ Imagem carregada e mapeada com sucesso (OS Inicial e Montados extraídos)!")
+        st.success("🖼️ Imagem carregada e mapeada com sucesso!")
         st.session_state["img_os"] = img_valores_os
         st.session_state["img_montados"] = img_valores_montados
 
@@ -375,7 +412,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                             toa_dfs.append(tdf)
                         df_toa = pd.concat(toa_dfs, ignore_index=True)
 
-                    # --- TRATATIVA DO CONSULTIVO (Lógica Power Query / VBA) ---
+                    # --- TRATATIVA DO CONSULTIVO (Lógica exata por contrato único) ---
                     consultivo_totais = {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0}
                     if up_consultivo is not None:
                         df_cons = ler_arquivo_seguro(up_consultivo)
@@ -592,7 +629,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (SALVANDO NA ABA HISTORICO_CONSULTIVO)
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -679,10 +716,17 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Meta do Consultivo (Automático):**\n### {fmt_br(meta_cons_auto)}")
                     st.session_state[f"inp_meta_c_{b_proj}"] = meta_cons_auto
 
+                    # --- PROJEÇÃO DO CONSULTIVO PROPORCIONAL ACUMULADA ---
+                    hoje_c_b = consultivo_totais.get(b_proj, 0)
+                    proj_c_b, _, _ = calcular_projecao_consultivo_base(b_proj, dias_uteis_auto, hoje_c_b, data_formatada)
+                    st.markdown(f"**Projeção do Consultivo:**\n### {fmt_br(proj_c_b)}")
+
                 with c4:
-                    hoje_cons_val = consultivo_totais.get(b_proj, 0)
-                    st.markdown(f"**Hoje Consultivo (Arquivo):**\n### {fmt_br(hoje_cons_val)}")
-                    st.session_state[f"inp_hoje_c_{b_proj}"] = hoje_cons_val
+                    hoje_c_b = consultivo_totais.get(b_proj, 0)
+                    st.markdown(f"**Hoje Consultivo (Arquivo):**\n### {fmt_br(hoje_c_b)}")
+                    st.session_state[f"inp_hoje_c_{b_proj}"] = hoje_c_b
+                    os_consult_val = hoje_c_b * 2
+                    st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
 
         st.markdown("---")
         
@@ -729,7 +773,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS", data=df_hist_sheet)
                 st.session_state["df_historico_custom"] = df_hist_sheet
 
-                # 2. ATUALIZAR ABA 'Historico_Consultivo' (GUARDANDO OS TOTAIS DIÁRIOS)
+                # 2. ATUALIZAR ABA 'Historico_Consultivo'
                 try:
                     df_cons_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_Consultivo")
                     if df_cons_sheet is None:
@@ -739,7 +783,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
                 for item in bases_config:
                     b_proj = item["projeto"]
-                    b_label = item["label"]
                     base_norm = normalizar_nome_base(b_proj)
                     qtd_c_base = consultivo_totais.get(b_proj, 0)
 
@@ -896,7 +939,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
                     res_b = calc_exp_met(df_b, m_base)
                     proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"] if "produtivo" in res_b else 0, data_formatada)
-                    proj_c_b = int(round((hoje_c_b / dias_trab) * dias_uteis)) if dias_trab > 0 else 0
+                    proj_c_b, _, _ = calcular_projecao_consultivo_base(b_proj, dias_uteis, hoje_c_b, data_formatada)
                     os_consult_b = hoje_c_b * 2
                     os_sem_consult_val = int(round(res_b["proj_dia"] - os_consult_b, 0))
 
@@ -1158,7 +1201,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
         proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
         
-        proj_c_b = int(round((hoje_c_b / dias_trab) * dias_uteis)) if dias_trab > 0 else 0
+        # --- Cálculo correto da Projeção do Consultivo proporcional ao acumulado ---
+        proj_c_b, _, _ = calcular_projecao_consultivo_base(b_proj, dias_uteis, hoje_c_b, data_formatada)
         os_consult_b = hoje_c_b * 2
 
         g_parados += p_base; g_montados += m_base; g_meta_os += meta_os_b; g_proj_os += proj_os_b
