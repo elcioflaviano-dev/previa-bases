@@ -344,7 +344,7 @@ def limpar_texto(val):
     return re.sub(r"\s+", " ", s)
 
 # ==============================================================================
-# PÁGINA 1: UPLOAD DE ARQUIVOS (ANIEL, TOA, CONSULTIVO E IMAGEM)
+# PÁGINA 1: UPLOAD DE ARQUIVOS (APLICANDO A REGRA DE EXTRACÃO DO CONSULTIVO)
 # ==============================================================================
 if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     st.subheader("📁 Passo 1: Upload e Cruzamento das Bases")
@@ -372,7 +372,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
 
     if up_aniel is not None:
         if st.button("🚀 Processar Arquivos e Cruzar Bases", type="primary"):
-            with st.spinner("Validando datas, processando cruzamento e calculando consultivo..."):
+            with st.spinner("Validando datas, processando cruzamento e aplicando regra do Consultivo..."):
                 try:
                     df_aniel = ler_arquivo_seguro(up_aniel)
                     df_aniel.columns = [str(c).strip() for c in df_aniel.columns]
@@ -412,26 +412,43 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                             toa_dfs.append(tdf)
                         df_toa = pd.concat(toa_dfs, ignore_index=True)
 
-                    # --- TRATATIVA DO CONSULTIVO (Lógica exata por contrato único) ---
+                    # --- TRATATIVA EXATA DO CONSULTIVO (APLICANDO A REGRA DE EXTRACÃO DE O.S.) ---
                     consultivo_totais = {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0}
                     if up_consultivo is not None:
                         df_cons = ler_arquivo_seguro(up_consultivo)
                         df_cons.columns = [str(c).strip() for c in df_cons.columns]
-                        col_c_contrato = next((c for c in df_cons.columns if "contrato" in c.lower()), df_cons.columns[0])
+                        
+                        col_obs = next((c for c in df_cons.columns if "observacao" in c.lower() or "obs" in c.lower()), df_cons.columns[0])
                         col_c_projeto = next((c for c in df_cons.columns if "projeto" in c.lower() or "base" in c.lower()), None)
                         
-                        df_cons["_chave_c_"] = df_cons[col_c_contrato].apply(limpar_chave)
-                        df_cons = df_cons[df_cons["_chave_c_"] != ""].drop_duplicates(subset=["_chave_c_"])
-                        
-                        if col_c_projeto:
-                            for base_key in consultivo_totais.keys():
-                                match_cons = df_cons[df_cons[col_c_projeto].astype(str).str.upper().str.contains(base_key.replace("NET-", ""), na=False)]
-                                consultivo_totais[base_key] = len(match_cons)
-                        else:
-                            total_cons = len(df_cons)
-                            consultivo_totais["NET-ABCDM"] = int(total_cons / 3)
-                            consultivo_totais["NET-Guarulhos"] = int(total_cons / 3)
-                            consultivo_totais["NET-LESTE"] = total_cons - (2 * int(total_cons / 3))
+                        # Aplica a mesma lógica Power Query / VBA: substitui "OC" por "/", quebra por delimitadores, filtra números >= 7 dígitos e pega itens únicos
+                        def extrair_os_consultivo(texto):
+                            if pd.isna(texto):
+                                return []
+                            txt_adj = str(texto).upper().replace("OC", "/")
+                            palavras = re.split(r'[\s/.,;:|\-()\[\]{}]+', txt_adj)
+                            os_encontradas = []
+                            for p in palavras:
+                                p_trim = p.strip()
+                                if len(p_trim) >= 7:
+                                    try:
+                                        if float(p_trim) > 0:
+                                            os_encontradas.append(p_trim)
+                                    except Exception:
+                                        pass
+                            return os_encontradas
+
+                        for base_key in consultivo_totais.keys():
+                            if col_c_projeto:
+                                df_base_cons = df_cons[df_cons[col_c_projeto].astype(str).str.upper().str.contains(base_key.replace("NET-", ""), na=False)]
+                            else:
+                                df_base_cons = df_cons
+
+                            todas_as_os = []
+                            for obs in df_base_cons[col_obs].dropna():
+                                todas_as_os.extend(extrair_os_consultivo(obs))
+                            
+                            consultivo_totais[base_key] = len(set(todas_as_os))
 
                     st.session_state["consultivo_totais"] = consultivo_totais
 
@@ -716,7 +733,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Meta do Consultivo (Automático):**\n### {fmt_br(meta_cons_auto)}")
                     st.session_state[f"inp_meta_c_{b_proj}"] = meta_cons_auto
 
-                    # --- PROJEÇÃO DO CONSULTIVO PROPORCIONAL ACUMULADA ---
                     hoje_c_b = consultivo_totais.get(b_proj, 0)
                     proj_c_b, _, _ = calcular_projecao_consultivo_base(b_proj, dias_uteis_auto, hoje_c_b, data_formatada)
                     st.markdown(f"**Projeção do Consultivo:**\n### {fmt_br(proj_c_b)}")
@@ -1082,7 +1098,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_pme = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
 
             return {
-                "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
+                "tot_os": tot_os, "os_aberta": aberta_count, "produtivo": prod_count,
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_canc": os_canc, "saiu_toa": saiu_toa,
@@ -1201,7 +1217,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
         proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
         
-        # --- Cálculo correto da Projeção do Consultivo proporcional ao acumulado ---
         proj_c_b, _, _ = calcular_projecao_consultivo_base(b_proj, dias_uteis, hoje_c_b, data_formatada)
         os_consult_b = hoje_c_b * 2
 
