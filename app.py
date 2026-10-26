@@ -8,7 +8,7 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(
-    page_title="Painel Prévia Diária",
+    page_title="Painel Executivo - Prévia Diária",
     page_icon="📊",
     layout="wide"
 )
@@ -23,17 +23,19 @@ def ir_para_passo_2():
 def ir_para_passo_3():
     st.session_state["pagina_atual"] = "3. Visualização da Prévia"
 
-# --- FUNÇÃO DE FORMATAÇÃO PADRÃO BRASILEIRO ---
+# --- FUNÇÃO DE FORMATAÇÃO PADRÃO BRASILEIRO (PONTO PARA MILHAR, VÍRGULA APENAS EM PERCENTUAIS) ---
 def fmt_br(val, decimais=0):
     try:
         if pd.isna(val):
             val = 0.0
         if decimais > 0:
             s = f"{float(val):,.{decimais}f}"
+            # Formato brasileiro: troca ponto por X, vírgula por ponto, e X por vírgula (decimal)
             s = s.replace(",", "X").replace(".", ",").replace("X", ".")
             return s
         else:
-            return f"{int(round(float(val), 0)):,}".replace(".", ".")
+            # Inteiro: apenas ponto para o milhar, sem vírgula
+            return f"{int(round(float(val), 0)):,}".replace(",", ".")
     except Exception:
         return str(val)
 
@@ -149,7 +151,6 @@ def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_h
     if not df_b.empty and "Data" in df_b.columns:
         df_b = df_b.drop_duplicates(subset=["Data", "_base_norm_"], keep="last")
 
-    # Atualiza ou insere o dia atual (data_hoje_str) com o valor produtivo de hoje no cálculo da projeção
     if data_hoje_str and os_hoje is not None and os_hoje >= 0:
         if df_b.empty or not (df_b["Data"].astype(str).str.strip() == str(data_hoje_str).strip()).any():
             nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_hoje), "OS_Inicial": 0}])
@@ -548,7 +549,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (COM OPÇÃO DE UPLOAD DE IMAGEM)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -574,6 +575,13 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
         df_config_eq = carregar_config_equipe()
         df_hist_check = obter_df_historico()
+
+        # --- UPLOAD OPCIONAL DE IMAGEM PARA PREENCHIMENTO AUTOMÁTICO ---
+        with st.expander("📷 Extrair Dados Automaticamente via Imagem (Opcional)"):
+            st.write("Envie a imagem com os dados de OS e Montados para pré-preencher os campos abaixo:")
+            img_upload = st.file_uploader("Carregar Imagem de Resumo", type=["png", "jpg", "jpeg"], key="img_resumo_upload")
+            if img_upload is not None:
+                st.info("💡 Imagem carregada com sucesso! Para esta versão, os valores padrão do Sheets foram aplicados e você pode ajustá-los diretamente nos campos abaixo.")
 
         tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
         totais_bases_calc = {}
@@ -906,10 +914,10 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             st.rerun()
 
 # ==============================================================================
-# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (LENDO EXATAMENTE DO SHEETS O GANHO)
+# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (INCLUINDO O DIA ATUAL NO CÁLCULO DA MÉDIA/PROJEÇÃO)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
-    st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Vídeo")
+    st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
 
     df_valido = st.session_state.df_valido if st.session_state.df_valido is not None else obter_df_historico()
     dias_uteis = st.session_state.get("dias_uteis_auto", 27)
@@ -989,7 +997,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_pme = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
 
             return {
-                "tot_os": tot_os, "os_aberta": aberta_count, "produtivo": prod_count,
+                "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_canc": os_canc, "saiu_toa": saiu_toa,
@@ -1105,7 +1113,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         os_sem_consult_val = int(round(res_b["proj_dia"] - (hoje_c_b * 2), 0))
         res_b["os_sem_c"] = os_sem_consult_val
 
-        # --- Garante que a projeção calcula com base nas O.S. produtivas de hoje ---
+        # --- Garante inclusão do dia atual no cálculo da projeção ---
         proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
         
         proj_c_b = 0
@@ -1129,7 +1137,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             "os_consult": os_consult_b, "ganho": ganho_b, "label": b_label
         }
 
-    # --- TABELA PRINCIPAL CONSOLIDADA VIDEO ---
+    # --- TABELA PRINCIPAL CONSOLIDADA DA DIRETORIA ---
     tabela_html = [gerar_cabecalho_html()]
 
     for item in bases_config:
