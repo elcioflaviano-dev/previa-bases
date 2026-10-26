@@ -119,16 +119,14 @@ def obter_df_historico():
     return st.session_state["df_historico_custom"]
 
 def buscar_os_inicial_sheets(base_proj, data_str):
-    """Busca tolerante e flexível de OS_Inicial no Sheets (Historico_OS) independente de maiúsculas/minúsculas ou prefixos."""
+    """Busca estritamente da coluna OS_Inicial no Sheets (Historico_OS). Retorna 0 se não encontrar."""
     base_norm = normalizar_nome_base(base_proj).upper()
     palavra_chave = "ABC" if "ABC" in base_norm else ("GUARULHOS" if "GUA" in base_norm or "GRU" in base_norm else "LESTE")
     
     df_h = obter_df_historico()
     if not df_h.empty and "Data" in df_h.columns and "Base" in df_h.columns and "OS_Inicial" in df_h.columns:
-        # Tenta primeiro correspondência exata de data e base normalizada
         match = df_h[(df_h["Data"].astype(str).str.strip() == str(data_str).strip()) & (df_h["Base"].astype(str).str.strip().str.upper() == base_norm)]
         if match.empty:
-            # Tenta busca flexível por palavra-chave da base e mesma data
             match = df_h[(df_h["Data"].astype(str).str.strip() == str(data_str).strip()) & (df_h["Base"].astype(str).str.strip().str.upper().str.contains(palavra_chave))]
         
         if not match.empty:
@@ -146,6 +144,10 @@ def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_h
     if not df_b.empty and "Base" in df_b.columns:
         df_b = df_b[df_b["Base"].astype(str).str.upper() == base_norm].copy()
     
+    # Remove duplicatas exatas de data/base para evitar inflar o histórico ao projetar
+    if not df_b.empty and "Data" in df_b.columns:
+        df_b = df_b.drop_duplicates(subset=["Data", "Base"], keep="last")
+
     if data_hoje_str and os_hoje is not None and os_hoje > 0:
         if df_b.empty or not (df_b["Data"].astype(str) == str(data_hoje_str)).any():
             nova = pd.DataFrame([{"Data": str(data_hoje_str), "Base": base_norm, "OS_Executadas": int(os_hoje), "OS_Inicial": 0}])
@@ -642,12 +644,12 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
         st.markdown("---")
         
-        # --- BOTÃO DE SINCRONIZAÇÃO SEGURO COM ESCRITA NO GOOGLE SHEETS ---
+        # --- BOTÃO DE SINCRONIZAÇÃO COM SOBRESCRITA LIMPA (EVITA DUPLICAR LINHAS NO SHEETS) ---
         if st.button("📊 Sincronizar Google Sheets e Gerar Prévia Executiva", type="primary"):
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 
-                # 1. ATUALIZAR ABA 'Historico_OS' (GRAVANDO EXATAMENTE O VALOR DO INPUT DA ROTA INICIAL)
+                # 1. ATUALIZAR ABA 'Historico_OS' (SUBSTITUINDO REGISTROS EXISTENTES DO DIA PARA EVITAR DUPLICIDADE)
                 try:
                     df_hist_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS")
                     if df_hist_sheet is None:
@@ -657,6 +659,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
                 for item in bases_config:
                     b_proj = item["projeto"]
+                    b_label = item["label"]
                     df_b = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()]
                     if "Tipo de Serviço" in df_b.columns:
                         df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
@@ -666,7 +669,16 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     
                     if prod_hoje > 0:
                         if not df_hist_sheet.empty and "Data" in df_hist_sheet.columns and "Base" in df_hist_sheet.columns:
-                            df_hist_sheet = df_hist_sheet[~((df_hist_sheet["Data"].astype(str) == str(data_formatada)) & (df_hist_sheet["Base"].astype(str).str.upper() == base_norm))]
+                            # Remove TUDO o que for da mesma data e base para reescrever limpo sem duplicar
+                            df_hist_sheet = df_hist_sheet[~(
+                                (df_hist_sheet["Data"].astype(str).str.strip() == str(data_formatada).strip()) & 
+                                (
+                                    (df_hist_sheet["Base"].astype(str).str.upper().str.strip() == base_norm.upper()) |
+                                    (df_hist_sheet["Base"].astype(str).str.upper().str.strip() == b_label.upper()) |
+                                    (df_hist_sheet["Base"].astype(str).str.upper().str.strip() == b_proj.upper())
+                                )
+                            )]
+                        
                         nova_h = pd.DataFrame([{
                             "Data": str(data_formatada), 
                             "Base": base_norm, 
@@ -728,7 +740,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
                 conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_Equipe", data=df_hist_eq_final)
 
-                # 4. ATUALIZAR ABA 'Previas_Diarias' (LENDO EXATAMENTE O INPUT DO PASSO 2)
+                # 4. ATUALIZAR ABA 'Previas_Diarias'
                 try:
                     df_previas_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
                     if df_previas_sheet is None:
@@ -978,7 +990,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_pme = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
 
             return {
-                "tot_os": tot_os, "os_aberta": os_aberta, "produtivo": prod_count,
+                "tot_os": tot_os, "os_aberta": aberta_count, "produtivo": prod_count,
                 "quebra_geral": improd_count, "pontos": pontos,
                 "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
                 "os_canc": os_canc, "saiu_toa": saiu_toa,
