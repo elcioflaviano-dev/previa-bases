@@ -8,7 +8,7 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(
-    page_title="Painel Executivo - Prévia Diária",
+    page_title="Painel Prévia Diária",
     page_icon="📊",
     layout="wide"
 )
@@ -917,7 +917,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 # PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA (INCLUINDO O DIA ATUAL NO CÁLCULO DA MÉDIA/PROJEÇÃO)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
-    st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
+    st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Vídeo")
 
     df_valido = st.session_state.df_valido if st.session_state.df_valido is not None else obter_df_historico()
     dias_uteis = st.session_state.get("dias_uteis_auto", 27)
@@ -1137,7 +1137,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             "os_consult": os_consult_b, "ganho": ganho_b, "label": b_label
         }
 
-    # --- TABELA PRINCIPAL CONSOLIDADA DA DIRETORIA ---
+    # --- TABELA PRINCIPAL CONSOLIDADA VIDEO ---
     tabela_html = [gerar_cabecalho_html()]
 
     for item in bases_config:
