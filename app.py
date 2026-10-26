@@ -531,7 +531,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (COM ROTA INICIAL PARA O GANHO DE O.S.)
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -621,9 +621,8 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
 
                 st.markdown("---")
-                # --- CAMPO PARA INSERIR O TOTAL DE O.S. DA ROTA INICIAL (PARA CALCULAR O GANHO DE O.S.) ---
                 st.markdown(f"##### 📈 Dados de Ganho de O.S. ({b_label}):")
-                rota_inicial_val = st.number_input(f"Total O.S. Rota Inicial ({b_label})", value=550 if "ABCDM" in b_proj else (540 if "Guarulhos" in b_proj else 520), key=f"inp_rota_{b_proj}")
+                rota_inicial_val = st.number_input(f"Total O.S. Rota Inicial ({b_label})", value=518 if "ABCDM" in b_proj else (540 if "Guarulhos" in b_proj else 520), key=f"inp_rota_{b_proj}")
 
         st.markdown("---")
         
@@ -733,7 +732,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     meta_c_b = int(m_base * 8)
                     hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 0)
                     
-                    # --- CÁLCULO DO GANHO DE O.S. (TOTAL O.S. DA PRÉVIA - ROTA INICIAL) ---
+                    # --- CÁLCULO EXATO DO GANHO DE O.S. (TOTAL O.S. DA PRÉVIA - ROTA INICIAL DIGITADA) ---
                     tot_os_previa_b = len(df_b)
                     rota_inicial_b = st.session_state.get(f"inp_rota_{b_proj}", 0)
                     ganho_b = max(0, tot_os_previa_b - int(rota_inicial_b))
@@ -1064,10 +1063,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         meta_c_b = int(m_base * 8)
         hoje_c_b = 0
         
-        # Recuperar o ganho de O.S. (Total O.S. da base - Rota Inicial)
         tot_os_previa_b = len(df_b)
-        # Rota inicial padrão estimada ou buscada
-        rota_inicial_def = 550 if "ABCDM" in b_proj else (540 if "Guarulhos" in b_proj else 520)
+        rota_inicial_def = 518 if "ABCDM" in b_proj else (540 if "Guarulhos" in b_proj else 520)
         ganho_b = max(0, tot_os_previa_b - rota_inicial_def)
 
         res_b = calcular_metricas(df_b, m_base, hoje_c_b)
