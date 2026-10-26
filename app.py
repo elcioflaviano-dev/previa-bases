@@ -131,7 +131,7 @@ def buscar_os_inicial_sheets(base_proj, data_str):
                     return int(float(val))
                 except Exception:
                     pass
-    return 518 if "ABC" in base_proj.upper() else (540 if "GUA" in base_proj.upper() or "GRU" in base_proj.upper() else 520)
+    return 0 if "ABC" in base_proj.upper() else (0 if "GUA" in base_proj.upper() or "GRU" in base_proj.upper() else 0)
 
 def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_hoje_str=None):
     base_norm = normalizar_nome_base(base_proj)
