@@ -119,15 +119,16 @@ def obter_df_historico():
     return st.session_state["df_historico_custom"]
 
 def buscar_os_inicial_sheets(base_proj, data_str):
-    """Busca estritamente da coluna OS_Inicial no Sheets (Historico_OS). Retorna 0 se não encontrar."""
+    """Busca estritamente da coluna OS_Inicial no Sheets (Historico_OS) com normalização."""
     base_norm = normalizar_nome_base(base_proj).upper()
     palavra_chave = "ABC" if "ABC" in base_norm else ("GUARULHOS" if "GUA" in base_norm or "GRU" in base_norm else "LESTE")
     
     df_h = obter_df_historico()
     if not df_h.empty and "Data" in df_h.columns and "Base" in df_h.columns and "OS_Inicial" in df_h.columns:
-        match = df_h[(df_h["Data"].astype(str).str.strip() == str(data_str).strip()) & (df_h["Base"].astype(str).str.strip().str.upper() == base_norm)]
+        df_h["_base_norm_"] = df_h["Base"].apply(normalizar_nome_base).str.upper()
+        match = df_h[(df_h["Data"].astype(str).str.strip() == str(data_str).strip()) & (df_h["_base_norm_"] == base_norm)]
         if match.empty:
-            match = df_h[(df_h["Data"].astype(str).str.strip() == str(data_str).strip()) & (df_h["Base"].astype(str).str.strip().str.upper().str.contains(palavra_chave))]
+            match = df_h[(df_h["Data"].astype(str).str.strip() == str(data_str).strip()) & (df_h["_base_norm_"].str.contains(palavra_chave))]
         
         if not match.empty:
             val = match.iloc[-1]["OS_Inicial"]
@@ -142,11 +143,11 @@ def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_h
     base_norm = normalizar_nome_base(base_proj)
     df_b = obter_df_historico().copy()
     if not df_b.empty and "Base" in df_b.columns:
-        df_b = df_b[df_b["Base"].astype(str).str.upper() == base_norm].copy()
+        df_b["_base_norm_"] = df_b["Base"].apply(normalizar_nome_base)
+        df_b = df_b[df_b["_base_norm_"].astype(str).str.upper() == base_norm.upper()].copy()
     
-    # Remove duplicatas exatas de data/base para evitar inflar o histórico ao projetar
     if not df_b.empty and "Data" in df_b.columns:
-        df_b = df_b.drop_duplicates(subset=["Data", "Base"], keep="last")
+        df_b = df_b.drop_duplicates(subset=["Data", "_base_norm_"], keep="last")
 
     if data_hoje_str and os_hoje is not None and os_hoje > 0:
         if df_b.empty or not (df_b["Data"].astype(str) == str(data_hoje_str)).any():
@@ -582,7 +583,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             with tabs[i]:
                 df_b_eq = df_config_eq[df_config_eq["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq.empty else pd.DataFrame()
                 
-                # --- ROTA INICIAL COMO PRIMEIRO CAMPO (LENDO DIRETAMENTE DO SHEETS DE FORMA TOLERANTE) ---
+                # --- ROTA INICIAL COMO PRIMEIRO CAMPO ---
                 os_inicial_sheets = buscar_os_inicial_sheets(b_proj, data_formatada)
                 st.markdown(f"##### 📈 1. Dados de Ganho de O.S. ({b_label}):")
                 rota_inicial_val = st.number_input(f"Total O.S. Rota Inicial ({b_label})", value=os_inicial_sheets, key=f"inp_rota_{b_proj}")
@@ -644,12 +645,12 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
         st.markdown("---")
         
-        # --- BOTÃO DE SINCRONIZAÇÃO COM SOBRESCRITA LIMPA (EVITA DUPLICAR LINHAS NO SHEETS) ---
+        # --- BOTÃO DE SINCRONIZAÇÃO COM REMOÇÃO ROBUSTA DE DUPLICADOS NO SHEETS ---
         if st.button("📊 Sincronizar Google Sheets e Gerar Prévia Executiva", type="primary"):
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 
-                # 1. ATUALIZAR ABA 'Historico_OS' (SUBSTITUINDO REGISTROS EXISTENTES DO DIA PARA EVITAR DUPLICIDADE)
+                # 1. ATUALIZAR ABA 'Historico_OS' (COM LIMPEZA RIGOROSA DE DUPLICADOS)
                 try:
                     df_hist_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS")
                     if df_hist_sheet is None:
@@ -669,15 +670,14 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     
                     if prod_hoje > 0:
                         if not df_hist_sheet.empty and "Data" in df_hist_sheet.columns and "Base" in df_hist_sheet.columns:
-                            # Remove TUDO o que for da mesma data e base para reescrever limpo sem duplicar
+                            df_hist_sheet["_base_norm_"] = df_hist_sheet["Base"].apply(normalizar_nome_base).str.upper()
+                            # Remove TUDO o que for da mesma data e base normalizada para nunca duplicar
                             df_hist_sheet = df_hist_sheet[~(
                                 (df_hist_sheet["Data"].astype(str).str.strip() == str(data_formatada).strip()) & 
-                                (
-                                    (df_hist_sheet["Base"].astype(str).str.upper().str.strip() == base_norm.upper()) |
-                                    (df_hist_sheet["Base"].astype(str).str.upper().str.strip() == b_label.upper()) |
-                                    (df_hist_sheet["Base"].astype(str).str.upper().str.strip() == b_proj.upper())
-                                )
+                                (df_hist_sheet["_base_norm_"] == base_norm.upper())
                             )]
+                            if "_base_norm_" in df_hist_sheet.columns:
+                                df_hist_sheet = df_hist_sheet.drop(columns=["_base_norm_"])
                         
                         nova_h = pd.DataFrame([{
                             "Data": str(data_formatada), 
@@ -766,7 +766,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     meta_c_b = int(m_base * 8)
                     hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 0)
                     
-                    # --- CÁLCULO EXATO USANDO O INPUT DO PASSO 2 E TRAVA DE NEGATIVOS PARA 0 ---
                     tot_os_previa_b = len(df_b)
                     rota_inicial_b = int(st.session_state.get(f"inp_rota_{b_proj}", 0))
                     ganho_b = max(0, tot_os_previa_b - rota_inicial_b)
