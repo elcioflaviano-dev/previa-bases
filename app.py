@@ -531,7 +531,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (COM ROTA INICIAL PARA O GANHO DE O.S.)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -619,6 +619,11 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     hoje_cons_val = st.number_input(f"Hoje Consultivo (Total do Dia) ({b_label})", value=0, key=f"inp_hoje_c_{b_proj}")
                     os_consult_val = hoje_cons_val * 2
                     st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
+
+                st.markdown("---")
+                # --- CAMPO PARA INSERIR O TOTAL DE O.S. DA ROTA INICIAL (PARA CALCULAR O GANHO DE O.S.) ---
+                st.markdown(f"##### 📈 Dados de Ganho de O.S. ({b_label}):")
+                rota_inicial_val = st.number_input(f"Total O.S. Rota Inicial ({b_label})", value=550 if "ABCDM" in b_proj else (540 if "Guarulhos" in b_proj else 520), key=f"inp_rota_{b_proj}")
 
         st.markdown("---")
         
@@ -727,7 +732,11 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     meta_os_b = st.session_state.get(f"inp_meta_os_{b_proj}", 11800)
                     meta_c_b = int(m_base * 8)
                     hoje_c_b = st.session_state.get(f"inp_hoje_c_{b_proj}", 0)
-                    ganho_b = 27 if "ABCDM" in b_proj else (40 if "Guarulhos" in b_proj else 42)
+                    
+                    # --- CÁLCULO DO GANHO DE O.S. (TOTAL O.S. DA PRÉVIA - ROTA INICIAL) ---
+                    tot_os_previa_b = len(df_b)
+                    rota_inicial_b = st.session_state.get(f"inp_rota_{b_proj}", 0)
+                    ganho_b = max(0, tot_os_previa_b - int(rota_inicial_b))
 
                     def calc_exp_met(df_sub, montados, hoje_c):
                         tot_os = len(df_sub)
@@ -747,7 +756,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         proj_os_exec = prod_count + (aberta_count * efic)
                         proj_dia = int(round(proj_os_exec, 0))
                         
-                        # --- FÓRMULA EXATA DE PONTOS COM PROJEÇÃO ---
                         pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
                         pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
                         pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
@@ -902,7 +910,6 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             proj_os_exec = prod_count + (aberta_count * efic)
             proj_dia = int(round(proj_os_exec, 0))
             
-            # --- FÓRMULA EXATA DE PONTOS COM PROJEÇÃO ---
             pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
             pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
             pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
@@ -1056,7 +1063,12 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         meta_os_b = 11800 if "ABCDM" in b_proj else 12200
         meta_c_b = int(m_base * 8)
         hoje_c_b = 0
-        ganho_b = 27 if "ABCDM" in b_proj else (40 if "Guarulhos" in b_proj else 42)
+        
+        # Recuperar o ganho de O.S. (Total O.S. da base - Rota Inicial)
+        tot_os_previa_b = len(df_b)
+        # Rota inicial padrão estimada ou buscada
+        rota_inicial_def = 550 if "ABCDM" in b_proj else (540 if "Guarulhos" in b_proj else 520)
+        ganho_b = max(0, tot_os_previa_b - rota_inicial_def)
 
         res_b = calcular_metricas(df_b, m_base, hoje_c_b)
         
