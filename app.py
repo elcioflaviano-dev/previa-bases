@@ -118,6 +118,22 @@ def obter_df_historico():
             st.session_state["df_historico_custom"] = pd.DataFrame(columns=["Data", "Base", "OS_Executadas", "OS_Inicial"])
     return st.session_state["df_historico_custom"]
 
+def buscar_os_inicial_sheets(base_proj, data_str):
+    """Busca o valor de OS_Inicial diretamente do Sheets (Historico_OS) para a base e data informada."""
+    base_norm = normalizar_nome_base(base_proj)
+    df_h = obter_df_historico()
+    if not df_h.empty and "Data" in df_h.columns and "Base" in df_h.columns and "OS_Inicial" in df_h.columns:
+        match = df_h[(df_h["Data"].astype(str) == str(data_str)) & (df_h["Base"].astype(str).str.upper() == base_norm)]
+        if not match.empty:
+            val = match.iloc[0]["OS_Inicial"]
+            if pd.notna(val) and str(val).strip() != "":
+                try:
+                    return int(float(val))
+                except Exception:
+                    pass
+    # Fallback padrão caso não encontre no histórico
+    return 518 if "ABC" in base_proj.upper() else (540 if "GUA" in base_proj.upper() or "GRU" in base_proj.upper() else 520)
+
 def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_hoje_str=None):
     base_norm = normalizar_nome_base(base_proj)
     df_b = obter_df_historico().copy()
@@ -522,7 +538,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (Buscando OS_Inicial do Sheets)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -612,8 +628,10 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Total O.S. do Consultivo:**\n### {fmt_br(os_consult_val)}")
 
                 st.markdown("---")
+                # --- BUSCA OS_INICIAL DIRETAMENTE DO SHEETS PARA PRÉ-PREENCHER ---
+                os_inicial_sheets = buscar_os_inicial_sheets(b_proj, data_formatada)
                 st.markdown(f"##### 📈 Dados de Ganho de O.S. ({b_label}):")
-                rota_inicial_val = st.number_input(f"Total O.S. Rota Inicial ({b_label})", value=518 if "ABCDM" in b_proj else (540 if "Guarulhos" in b_proj else 520), key=f"inp_rota_{b_proj}")
+                rota_inicial_val = st.number_input(f"Total O.S. Rota Inicial ({b_label})", value=os_inicial_sheets, key=f"inp_rota_{b_proj}")
 
         st.markdown("---")
         
@@ -1061,8 +1079,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         hoje_c_b = 0
         
         tot_os_previa_b = len(df_b)
-        rota_inicial_def = 518 if "ABCDM" in b_proj else (540 if "Guarulhos" in b_proj else 520)
-        ganho_b = max(0, tot_os_previa_b - rota_inicial_def)
+        rota_inicial_b = buscar_os_inicial_sheets(b_proj, data_formatada)
+        ganho_b = max(0, tot_os_previa_b - rota_inicial_b)
 
         res_b = calcular_metricas(df_b, m_base, hoje_c_b)
         
