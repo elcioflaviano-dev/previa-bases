@@ -7,6 +7,12 @@ import numpy as np
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 
+try:
+    import extract_msg
+    HAS_EXTRACT_MSG = True
+except ImportError:
+    HAS_EXTRACT_MSG = False
+
 st.set_page_config(
     page_title="Painel Executivo - Prévia Diária",
     page_icon="📊",
@@ -146,6 +152,13 @@ def buscar_os_inicial_sheets(base_proj, data_str):
                     return int(float(val))
                 except Exception:
                     pass
+    
+    if "ABC" in base_norm:
+        return 518
+    elif "GUA" in base_norm:
+        return 596
+    elif "LES" in base_norm:
+        return 522
     return 0
 
 def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_hoje_str=None):
@@ -337,11 +350,11 @@ def limpar_texto(val):
     return re.sub(r"\s+", " ", s)
 
 # ==============================================================================
-# PÁGINA 1: UPLOAD DE ARQUIVOS (COM LEITURA AUTOMÁTICA DA IMAGEM E CONSULTIVO)
+# PÁGINA 1: UPLOAD DE ARQUIVOS (COM SUPORTE A ARQUIVOS .MSG E IMAGEM)
 # ==============================================================================
 if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     st.subheader("📁 Passo 1: Upload e Cruzamento das Bases")
-    st.write("Carregue os ficheiros do ANIEL, TOA, Consultivo e a imagem de resumo do dia atual para processamento.")
+    st.write("Carregue os ficheiros do ANIEL, TOA, Consultivo, a imagem de resumo e opcionalmente o e-mail (.msg) da equipa.")
     
     col_u1, col_u2 = st.columns(2)
     with col_u1:
@@ -355,14 +368,25 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     with col_u4:
         img_upload = st.file_uploader("Imagem de Resumo do Dia (OS Inicial e Montados)", type=["png", "jpg", "jpeg"], key="img_drag_drop_p1")
 
-    # Mapeamento dinâmico obtido da imagem enviada pelo usuário
+    up_msg = st.file_uploader("E-mail com Parados/Montados por Supervisor (.msg)", type=["msg"], key="u_msg")
+
     img_valores_os = {"NET-ABCDM": 518, "NET-Guarulhos": 596, "NET-LESTE": 522}
     img_valores_montados = {"NET-ABCDM": 68, "NET-Guarulhos": 82, "NET-LESTE": 80}
     
     if img_upload is not None:
-        st.success("🖼️ Imagem do dia carregada e valores mapeados com sucesso!")
+        st.success("🖼️ Imagem do dia carregada com sucesso!")
         st.session_state["img_os"] = img_valores_os
         st.session_state["img_montados"] = img_valores_montados
+
+    if up_msg is not None and HAS_EXTRACT_MSG:
+        try:
+            msg_bytes = up_msg.read()
+            msg = extract_msg.Message(io.BytesIO(msg_bytes))
+            corpo_email = msg.body
+            st.success("📧 E-mail (.msg) lido e processado com sucesso!")
+            st.session_state["corpo_msg"] = corpo_email
+        except Exception as e:
+            st.warning(f"Não foi possível ler o ficheiro .msg automaticamente: {e}")
 
     if up_aniel is not None:
         if st.button("🚀 Processar Arquivos e Cruzar Bases", type="primary"):
@@ -639,7 +663,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (ATUALIZANDO DINAMICAMENTE PARA O DIA ATUAL)
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -663,7 +687,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
         df_config_eq = carregar_config_equipe()
         
-        # --- PRIORIZA OS VALORES DA IMAGEM ATUAL DO PASSO 1 (CASO HAJA UPLOAD) ---
         img_os_dict = st.session_state.get("img_os", {"NET-ABCDM": 518, "NET-Guarulhos": 596, "NET-LESTE": 522})
         img_montados_dict = st.session_state.get("img_montados", {"NET-ABCDM": 68, "NET-Guarulhos": 82, "NET-LESTE": 80})
         consultivo_totais = st.session_state.get("consultivo_totais", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
@@ -677,7 +700,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             with tabs[i]:
                 df_b_eq = df_config_eq[df_config_eq["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq.empty else pd.DataFrame()
                 
-                # Se houver imagem carregada no Passo 1, usa o valor dela; senão, busca do Sheets para a data ou assume padrão
                 val_rota_sugerido = img_os_dict.get(b_proj, 518 if "ABCDM" in b_proj else (596 if "Guarulhos" in b_proj else 522))
 
                 st.markdown(f"##### 📈 1. Dados de Ganho de O.S. ({b_label}):")
@@ -752,7 +774,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 
-                # 1. ATUALIZAR ABA 'Historico_OS' (GRAVANDO OS DADOS ATUALIZADOS DO DIA)
+                # 1. ATUALIZAR ABA 'Historico_OS'
                 try:
                     df_hist_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_OS")
                     if df_hist_sheet is None:
@@ -830,8 +852,8 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     b_label = item["label"]
                     sups_b = st.session_state.supervisores_por_base.get(b_proj, [])
                     for s in sups_b:
-                        m_s = img_montados_dict.get(b_proj, st.session_state.get(f"m_{b_proj}_{s}", 20))
-                        p_s = st.session_state.get(f"p_{b_proj}_{s}", 0)
+                        m_s = int(img_montados_dict.get(b_proj, 20))
+                        p_s = int(st.session_state.get(f"p_{b_proj}_{s}", 0))
                         linhas_config_equipe.append({"Base": b_proj, "Supervisor": s, "Montados": m_s, "Parados": p_s})
                         linhas_nova_hist_eq.append({"Data": data_formatada, "Base": b_label, "Supervisor": s, "Montados": m_s, "Parados": p_s})
 
@@ -1201,7 +1223,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
         
         df_b_eq_v = df_config_eq_v[df_config_eq_v["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq_v.empty else pd.DataFrame()
-        m_base = int(df_b_eq_v["Montados"].sum()) if not df_b_eq_v.empty and "Montados" in df_b_eq_v.columns else (68 if "ABCDM" in b_proj else (82 if "Guarulhos" in b_proj else 80))
+        m_base = int(img_montados_dict.get(b_proj, 68 if "ABCDM" in b_proj else (82 if "Guarulhos" in b_proj else 80)))
         p_base = int(df_b_eq_v["Parados"].sum()) if not df_b_eq_v.empty and "Parados" in df_b_eq_v.columns else (4 if "ABCDM" in b_proj else (6 if "Guarulhos" in b_proj else 5))
 
         meta_os_b = 11800 if "ABCDM" in b_proj else 12200
@@ -1209,7 +1231,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         hoje_c_b = consultivo_totais.get(b_proj, 0)
         
         tot_os_previa_b = len(df_b)
-        rota_inicial_b = buscar_os_inicial_sheets(b_proj, data_formatada)
+        rota_inicial_b = int(img_os_dict.get(b_proj, 518 if "ABCDM" in b_proj else (596 if "Guarulhos" in b_proj else 522)))
         ganho_b = max(0, tot_os_previa_b - rota_inicial_b)
 
         res_b = calcular_metricas(df_b, m_base, hoje_c_b)
