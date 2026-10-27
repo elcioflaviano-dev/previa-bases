@@ -350,11 +350,11 @@ def limpar_texto(val):
     return re.sub(r"\s+", " ", s)
 
 # ==============================================================================
-# PÁGINA 1: UPLOAD DE ARQUIVOS (COM IMAGEM E EMAIL .MSG)
+# PÁGINA 1: UPLOAD DE ARQUIVOS (COM LEITURA DO EMAIL .MSG E IMAGEM)
 # ==============================================================================
 if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     st.subheader("📁 Passo 1: Upload e Cruzamento das Bases")
-    st.write("Carregue os ficheiros do ANIEL, TOA, Consultivo, a imagem de resumo e opcionalmente o e-mail (.msg) do dia.")
+    st.write("Carregue os ficheiros do ANIEL, TOA, Consultivo, a imagem de resumo e o e-mail (.msg) do dia para extração automática.")
     
     col_u1, col_u2 = st.columns(2)
     with col_u1:
@@ -370,13 +370,13 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
 
     up_msg = st.file_uploader("E-mail com Parados/Montados (.msg)", type=["msg"], key="u_msg")
 
+    # Valores padrão iniciais (caso não haja e-mail/imagem)
     img_valores_os = {"NET-ABCDM": 518, "NET-Guarulhos": 596, "NET-LESTE": 522}
-    img_valores_montados = {"NET-ABCDM": 64, "NET-Guarulhos": 82, "NET-LESTE": 80}
-    
+    img_valores_montados = {"NET-ABCDM": 64, "NET-Guarulhos": 82, "NET-LESTE": 78}
+
     if img_upload is not None:
         st.success("🖼️ Imagem de resumo do dia carregada com sucesso!")
         st.session_state["img_os"] = img_valores_os
-        st.session_state["img_montados"] = img_valores_montados
 
     if up_msg is not None and HAS_EXTRACT_MSG:
         try:
@@ -394,6 +394,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                 pos = corpo.upper().find(b_nome)
                 if pos != -1:
                     bloco = corpo[pos:pos+400]
+                    # Captura o valor exato de Montados do cabeçalho do e-mail
                     m_mont = re.search(r'MONTADOS\s*[-–:]\s*(\d+)', bloco, re.IGNORECASE)
                     if m_mont:
                         email_montados[b_key] = int(m_mont.group(1))
@@ -711,7 +712,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         df_config_eq = carregar_config_equipe()
         
         img_os_dict = st.session_state.get("img_os", {"NET-ABCDM": 518, "NET-Guarulhos": 596, "NET-LESTE": 522})
-        img_montados_dict = st.session_state.get("img_montados", {"NET-ABCDM": 64, "NET-Guarulhos": 82, "NET-LESTE": 80})
+        img_montados_dict = st.session_state.get("img_montados", {"NET-ABCDM": 64, "NET-Guarulhos": 82, "NET-LESTE": 78})
         consultivo_totais = st.session_state.get("consultivo_totais", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
 
         tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
@@ -756,7 +757,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 c1, c2, c3, c4 = st.columns(4)
                 
                 with c1:
-                    def_montados_base = img_montados_dict.get(b_proj, 64 if "ABCDM" in b_proj else (82 if "Guarulhos" in b_proj else 80))
+                    def_montados_base = img_montados_dict.get(b_proj, 64 if "ABCDM" in b_proj else (82 if "Guarulhos" in b_proj else 78))
                     montados_val = st.number_input(
                         f"Total Montados ({b_label})", 
                         value=int(def_montados_base), 
@@ -1235,7 +1236,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     g_raw_nd_q = 0; g_raw_gpon_q = 0; g_raw_mig_q = 0; g_raw_pme_q = 0
 
     metricas_bases = {}
-    img_montados_dict = st.session_state.get("img_montados", {"NET-ABCDM": 64, "NET-Guarulhos": 82, "NET-LESTE": 80})
+    img_montados_dict = st.session_state.get("img_montados", {"NET-ABCDM": 64, "NET-Guarulhos": 82, "NET-LESTE": 78})
     consultivo_totais = st.session_state.get("consultivo_totais", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
 
     for item in bases_config:
@@ -1247,7 +1248,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
         
         df_b_eq_v = df_config_eq_v[df_config_eq_v["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq_v.empty else pd.DataFrame()
-        m_base = int(img_montados_dict.get(b_proj, 68 if "ABC" in b_proj else (82 if "GUA" in b_proj else 80)))
+        m_base = int(img_montados_dict.get(b_proj, 68 if "ABC" in b_proj else (82 if "GUA" in b_proj else 78)))
         p_base = int(df_b_eq_v["Parados"].sum()) if not df_b_eq_v.empty and "Parados" in df_b_eq_v.columns else 0
 
         meta_os_b = 11800 if "ABCDM" in b_proj else 12200
