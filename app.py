@@ -7,6 +7,12 @@ import numpy as np
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 
+try:
+    import extract_msg
+    HAS_EXTRACT_MSG = True
+except ImportError:
+    HAS_EXTRACT_MSG = False
+
 st.set_page_config(
     page_title="Painel Executivo - Prévia Diária",
     page_icon="📊",
@@ -344,11 +350,11 @@ def limpar_texto(val):
     return re.sub(r"\s+", " ", s)
 
 # ==============================================================================
-# PÁGINA 1: UPLOAD DE ARQUIVOS (COM IMAGEM EXATA)
+# PÁGINA 1: UPLOAD DE ARQUIVOS (COM IMAGEM, CONSULTIVO E EMAIL .MSG)
 # ==============================================================================
 if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     st.subheader("📁 Passo 1: Upload e Cruzamento das Bases")
-    st.write("Carregue os ficheiros do ANIEL, TOA, Consultivo e a imagem de resumo do dia para processamento.")
+    st.write("Carregue os ficheiros do ANIEL, TOA, Consultivo, a imagem de resumo (OS Inicial) e o e-mail de parados (.msg).")
     
     col_u1, col_u2 = st.columns(2)
     with col_u1:
@@ -360,16 +366,45 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     with col_u3:
         up_consultivo = st.file_uploader("Ficheiro Consultivo (.xlsx, .xlsm ou .csv)", type=["xlsx", "xlsm", "csv"], key="u_consultivo")
     with col_u4:
-        img_upload = st.file_uploader("Imagem de Resumo do Dia (OS Inicial e Montados)", type=["png", "jpg", "jpeg"], key="img_drag_drop_p1")
+        img_upload = st.file_uploader("Imagem de Resumo do Dia (OS Inicial)", type=["png", "jpg", "jpeg"], key="img_drag_drop_p1")
 
-    # Mapeamento exato extraído da imagem fornecida (ABCDM: 503 e 65 | Guarulhos: 536 e 82 | Leste: 530 e 80)
+    up_msg = st.file_uploader("E-mail de Parados por Supervisor (.msg)", type=["msg"], key="u_msg")
+
+    # Mapeamento padrão de Rota Inicial (OS) e Montados fixos da imagem
     img_valores_os = {"NET-ABCDM": 503, "NET-Guarulhos": 536, "NET-LESTE": 530}
     img_valores_montados = {"NET-ABCDM": 65, "NET-Guarulhos": 82, "NET-LESTE": 80}
     
     if img_upload is not None:
-        st.success("🖼️ Imagem de resumo do dia carregada e mapeada com sucesso!")
+        st.success("🖼️ Imagem de resumo do dia carregada com sucesso!")
         st.session_state["img_os"] = img_valores_os
         st.session_state["img_montados"] = img_valores_montados
+
+    # Leitura inteligente do e-mail .msg para preencher automaticamente os parados por supervisor
+    if up_msg is not None and HAS_EXTRACT_MSG:
+        try:
+            msg_bytes = up_msg.read()
+            msg = extract_msg.Message(io.BytesIO(msg_bytes))
+            assunto = str(msg.subject)
+            corpo = str(msg.body)
+            
+            match_data = re.search(r'\d{2}/\d{2}/\d{4}', assunto + " " + corpo)
+            if match_data:
+                st.session_state["email_data_ext"] = match_data.group(0)
+
+            email_parados_por_sup = {}
+            for linha in corpo.split('\n'):
+                linha_up = linha.strip().upper()
+                for sup_conhecido in [
+                    "EDSON", "MAICON", "NELSON", "ADRIANO", "DANIELE", 
+                    "FERNANDO", "PALOMA", "ALAN", "ELISANGELA", "FRANCISCO", "JOAO CARLOS"
+                ]:
+                    if sup_conhecido in linha_up:
+                        email_parados_por_sup[sup_conhecido] = email_parados_por_sup.get(sup_conhecido, 0) + 1
+
+            st.session_state["email_parados_auto"] = email_parados_por_sup
+            st.success("📧 E-mail (.msg) lido com sucesso e parados contabilizados por supervisor!")
+        except Exception as e:
+            st.warning(f"Aviso ao ler o .msg: {e}")
 
     if up_aniel is not None:
         if st.button("🚀 Processar Arquivos e Cruzar Bases", type="primary"):
@@ -385,7 +420,9 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                         if not datas_a.empty:
                             data_aniel_str = datas_a.iloc[0].strftime("%d/%m/%Y")
 
-                    if data_aniel_str:
+                    if "email_data_ext" in st.session_state:
+                        st.session_state["data_formatada_ativa"] = st.session_state["email_data_ext"]
+                    elif data_aniel_str:
                         st.session_state["data_formatada_ativa"] = data_aniel_str
 
                     col_proj = next((c for c in df_aniel.columns if c.lower() == "projeto"), "Projeto")
@@ -649,7 +686,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
         )
 
 # ==============================================================================
-# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (PARADOS MANUAIS POR SUPERVISOR)
+# PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS (PARADOS PREENCHIDOS VIA EMAIL)
 # ==============================================================================
 elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     st.subheader("⚙️ Passo 2: Dados Operacionais por Base")
@@ -678,6 +715,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
         img_os_dict = st.session_state.get("img_os", {"NET-ABCDM": 503, "NET-Guarulhos": 536, "NET-LESTE": 530})
         img_montados_dict = st.session_state.get("img_montados", {"NET-ABCDM": 65, "NET-Guarulhos": 82, "NET-LESTE": 80})
         consultivo_totais = st.session_state.get("consultivo_totais", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
+        email_parados_auto = st.session_state.get("email_parados_auto", {})
 
         tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
         totais_bases_calc = {}
@@ -700,7 +738,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 )
                 
                 st.markdown("---")
-                st.markdown(f"##### 👥 2. Equipa de Supervisores da Base {b_label} (Preencha os Parados Manualmente):")
+                st.markdown(f"##### 👥 2. Equipa de Supervisores da Base {b_label}:")
                 sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
                 soma_p_base = 0
 
@@ -709,7 +747,15 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     for sup in sups_base:
                         sup_eq = df_b_eq[df_b_eq["Supervisor"].astype(str).str.upper().str.strip() == sup.strip().upper()] if not df_b_eq.empty and "Supervisor" in df_b_eq.columns else pd.DataFrame()
                         m_def = int(img_montados_dict.get(b_proj, 20))
-                        p_def = int(sup_eq["Parados"].values[0]) if not sup_eq.empty and pd.notna(sup_eq["Parados"].values[0]) else 0
+                        
+                        # Verifica se o e-mail trouxe a contagem automática para este supervisor, senão pega do Sheets ou 0
+                        parados_email_val = 0
+                        for k_sup, v_qtd in email_parados_auto.items():
+                            if k_sup in sup.upper():
+                                parados_email_val = v_qtd
+                                break
+                        
+                        p_def = parados_email_val if parados_email_val > 0 else (int(sup_eq["Parados"].values[0]) if not sup_eq.empty and pd.notna(sup_eq["Parados"].values[0]) else 0)
 
                         with col_s1:
                             st.number_input(f"Montados: {sup}", value=m_def, key=f"m_{b_proj}_{sup}", disabled=True)
@@ -1213,9 +1259,12 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         if not df_b.empty and "Tipo de Serviço" in df_b.columns:
             df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
         
-        df_b_eq_v = df_config_eq_v[df_config_eq_v["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq_v.empty else pd.DataFrame()
-        m_base = int(img_montados_dict.get(b_proj, 68 if "ABC" in b_proj else (82 if "GUA" in b_proj else 80)))
-        p_base = int(df_b_eq_v["Parados"].sum()) if not df_b_eq_v.empty and "Parados" in df_b_eq.columns else 0
+        df_b_eq_v = df_config_eq_v[df_config_eq_v["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq.empty else pd.DataFrame()
+        m_base = int(img_montados_dict.get(b_proj, 65 if "ABC" in b_proj else (82 if "GUA" in b_proj else 80)))
+        
+        # Soma os parados informados para os supervisores desta base
+        sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
+        p_base = sum([int(st.session_state.get(f"p_{b_proj}_{s}", 0)) for s in sups_base])
 
         meta_os_b = 11800 if "ABCDM" in b_proj else 12200
         meta_c_b = int(m_base * 8)
