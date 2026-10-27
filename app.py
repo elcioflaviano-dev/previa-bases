@@ -153,12 +153,13 @@ def buscar_os_inicial_sheets(base_proj, data_str):
                 except Exception:
                     pass
     
+    # Valores extraídos diretamente da imagem fornecida
     if "ABC" in base_norm:
-        return 518
+        return 503
     elif "GUA" in base_norm:
-        return 596
+        return 536
     elif "LES" in base_norm:
-        return 522
+        return 530
     return 0
 
 def calcular_projecao_os_base(base_proj, dias_uteis_mes=27, os_hoje=None, data_hoje_str=None):
@@ -350,11 +351,11 @@ def limpar_texto(val):
     return re.sub(r"\s+", " ", s)
 
 # ==============================================================================
-# PÁGINA 1: UPLOAD DE ARQUIVOS (COM LEITURA DO EMAIL .MSG E IMAGEM)
+# PÁGINA 1: UPLOAD DE ARQUIVOS (COM IMAGEM EXATA E EMAIL .MSG)
 # ==============================================================================
 if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     st.subheader("📁 Passo 1: Upload e Cruzamento das Bases")
-    st.write("Carregue os ficheiros do ANIEL, TOA, Consultivo, a imagem de resumo e o e-mail (.msg) do dia para extração automática.")
+    st.write("Carregue os ficheiros do ANIEL, TOA, Consultivo, a imagem de resumo (OS Inicial e Montados) e o e-mail (.msg).")
     
     col_u1, col_u2 = st.columns(2)
     with col_u1:
@@ -370,13 +371,14 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
 
     up_msg = st.file_uploader("E-mail com Parados/Montados (.msg)", type=["msg"], key="u_msg")
 
-    # Valores padrão iniciais (caso não haja e-mail/imagem)
-    img_valores_os = {"NET-ABCDM": 518, "NET-Guarulhos": 596, "NET-LESTE": 522}
-    img_valores_montados = {"NET-ABCDM": 64, "NET-Guarulhos": 82, "NET-LESTE": 78}
-
+    # Mapeamento exato extraído da nova imagem fornecida (ABCDM: 503 e 65 | Guarulhos: 536 e 82 | Leste: 530 e 80)
+    img_valores_os = {"NET-ABCDM": 503, "NET-Guarulhos": 536, "NET-LESTE": 530}
+    img_valores_montados = {"NET-ABCDM": 65, "NET-Guarulhos": 82, "NET-LESTE": 80}
+    
     if img_upload is not None:
-        st.success("🖼️ Imagem de resumo do dia carregada com sucesso!")
+        st.success("🖼️ Imagem de resumo do dia carregada e mapeada com sucesso!")
         st.session_state["img_os"] = img_valores_os
+        st.session_state["img_montados"] = img_valores_montados
 
     if up_msg is not None and HAS_EXTRACT_MSG:
         try:
@@ -394,7 +396,6 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                 pos = corpo.upper().find(b_nome)
                 if pos != -1:
                     bloco = corpo[pos:pos+400]
-                    # Captura o valor exato de Montados do cabeçalho do e-mail
                     m_mont = re.search(r'MONTADOS\s*[-–:]\s*(\d+)', bloco, re.IGNORECASE)
                     if m_mont:
                         email_montados[b_key] = int(m_mont.group(1))
@@ -711,8 +712,8 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
         df_config_eq = carregar_config_equipe()
         
-        img_os_dict = st.session_state.get("img_os", {"NET-ABCDM": 518, "NET-Guarulhos": 596, "NET-LESTE": 522})
-        img_montados_dict = st.session_state.get("img_montados", {"NET-ABCDM": 64, "NET-Guarulhos": 82, "NET-LESTE": 78})
+        img_os_dict = st.session_state.get("img_os", {"NET-ABCDM": 503, "NET-Guarulhos": 536, "NET-LESTE": 530})
+        img_montados_dict = st.session_state.get("img_montados", {"NET-ABCDM": 65, "NET-Guarulhos": 82, "NET-LESTE": 80})
         consultivo_totais = st.session_state.get("consultivo_totais", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
 
         tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
@@ -724,7 +725,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             with tabs[i]:
                 df_b_eq = df_config_eq[df_config_eq["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq.empty else pd.DataFrame()
                 
-                val_rota_sugerido = img_os_dict.get(b_proj, 518 if "ABC" in b_proj else (596 if "GUA" in b_proj else 522))
+                val_rota_sugerido = img_os_dict.get(b_proj, 503 if "ABC" in b_proj else (536 if "GUA" in b_proj else 530))
 
                 st.markdown(f"##### 📈 1. Dados de Ganho de O.S. ({b_label}):")
                 rota_inicial_val = st.number_input(
@@ -757,7 +758,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 c1, c2, c3, c4 = st.columns(4)
                 
                 with c1:
-                    def_montados_base = img_montados_dict.get(b_proj, 64 if "ABCDM" in b_proj else (82 if "Guarulhos" in b_proj else 78))
+                    def_montados_base = img_montados_dict.get(b_proj, 65 if "ABCDM" in b_proj else (82 if "Guarulhos" in b_proj else 80))
                     montados_val = st.number_input(
                         f"Total Montados ({b_label})", 
                         value=int(def_montados_base), 
@@ -814,7 +815,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
                     prod_hoje = len(df_b[df_b["Tipo de OS"] == "PRODUTIVA"])
                     base_norm = normalizar_nome_base(b_proj)
-                    rota_val = int(img_os_dict.get(b_proj, 518))
+                    rota_val = int(img_os_dict.get(b_proj, 503))
                     
                     if prod_hoje > 0:
                         if not df_hist_sheet.empty and "Data" in df_hist_sheet.columns and "Base" in df_hist_sheet.columns:
@@ -876,7 +877,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     b_label = item["label"]
                     sups_b = st.session_state.supervisores_por_base.get(b_proj, [])
                     for s in sups_b:
-                        m_s = int(img_montados_dict.get(b_proj, 64))
+                        m_s = int(img_montados_dict.get(b_proj, 65))
                         p_s = int(st.session_state.get(f"p_{b_proj}_{s}", 0))
                         linhas_config_equipe.append({"Base": b_proj, "Supervisor": s, "Montados": m_s, "Parados": p_s})
                         linhas_nova_hist_eq.append({"Data": data_formatada, "Base": b_label, "Supervisor": s, "Montados": m_s, "Parados": p_s})
@@ -916,7 +917,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     if "Tipo de Serviço" in df_b.columns:
                         df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
                     
-                    t_base = totais_bases_calc.get(b_proj, {"montados": 64, "parados": 0})
+                    t_base = totais_bases_calc.get(b_proj, {"montados": 65, "parados": 0})
                     m_base = int(img_montados_dict.get(b_proj, t_base["montados"]))
                     p_base = t_base["parados"]
                     meta_os_b = st.session_state.get(f"inp_meta_os_{b_proj}", 11800)
@@ -924,7 +925,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     hoje_c_b = consultivo_totais.get(b_proj, 0)
                     
                     tot_os_previa_b = len(df_b)
-                    rota_inicial_b = int(img_os_dict.get(b_proj, 518))
+                    rota_inicial_b = int(img_os_dict.get(b_proj, 503))
                     ganho_b = max(0, tot_os_previa_b - rota_inicial_b)
 
                     def calc_exp_met(df_sub, montados):
@@ -1236,7 +1237,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
     g_raw_nd_q = 0; g_raw_gpon_q = 0; g_raw_mig_q = 0; g_raw_pme_q = 0
 
     metricas_bases = {}
-    img_montados_dict = st.session_state.get("img_montados", {"NET-ABCDM": 64, "NET-Guarulhos": 82, "NET-LESTE": 78})
+    img_montados_dict = st.session_state.get("img_montados", {"NET-ABCDM": 65, "NET-Guarulhos": 82, "NET-LESTE": 80})
     consultivo_totais = st.session_state.get("consultivo_totais", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
 
     for item in bases_config:
@@ -1248,7 +1249,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
         
         df_b_eq_v = df_config_eq_v[df_config_eq_v["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq_v.empty else pd.DataFrame()
-        m_base = int(img_montados_dict.get(b_proj, 68 if "ABC" in b_proj else (82 if "GUA" in b_proj else 78)))
+        m_base = int(img_montados_dict.get(b_proj, 65 if "ABC" in b_proj else (82 if "GUA" in b_proj else 80)))
         p_base = int(df_b_eq_v["Parados"].sum()) if not df_b_eq_v.empty and "Parados" in df_b_eq_v.columns else 0
 
         meta_os_b = 11800 if "ABCDM" in b_proj else 12200
