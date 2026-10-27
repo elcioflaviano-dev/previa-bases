@@ -344,11 +344,11 @@ def limpar_texto(val):
     return re.sub(r"\s+", " ", s)
 
 # ==============================================================================
-# PÁGINA 1: UPLOAD DE ARQUIVOS (COM SUPORTE A IMAGEM DE RESUMO E CONSULTIVO)
+# PÁGINA 1: UPLOAD DE ARQUIVOS (COM CAMPO DE UPLOAD DE IMAGEM RESTAURADO)
 # ==============================================================================
 if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     st.subheader("📁 Passo 1: Upload e Cruzamento das Bases")
-    st.write("Carregue os ficheiros do ANIEL, TOA, Consultivo e a imagem de resumo do dia atual para processamento.")
+    st.write("Carregue os ficheiros do ANIEL, TOA, Consultivo e a imagem de resumo do dia para processamento.")
     
     col_u1, col_u2 = st.columns(2)
     with col_u1:
@@ -362,7 +362,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     with col_u4:
         img_upload = st.file_uploader("Imagem de Resumo do Dia (OS Inicial e Montados)", type=["png", "jpg", "jpeg"], key="img_drag_drop_p1")
 
-    # Mapeamento padrão obtido da imagem de referência atualizada (Ex: 26/10/2026)
+    # Mapeamento padrão obtido da imagem de referência enviada pelo usuário
     img_valores_os = {"NET-ABCDM": 518, "NET-Guarulhos": 596, "NET-LESTE": 522}
     img_valores_montados = {"NET-ABCDM": 64, "NET-Guarulhos": 82, "NET-LESTE": 80}
     
