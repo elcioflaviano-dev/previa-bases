@@ -7,6 +7,12 @@ import numpy as np
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 
+try:
+    import extract_msg
+    HAS_EXTRACT_MSG = True
+except ImportError:
+    HAS_EXTRACT_MSG = False
+
 st.set_page_config(
     page_title="Painel Executivo - Prévia Diária",
     page_icon="📊",
@@ -344,11 +350,11 @@ def limpar_texto(val):
     return re.sub(r"\s+", " ", s)
 
 # ==============================================================================
-# PÁGINA 1: UPLOAD DE ARQUIVOS (COM CAMPO DE UPLOAD DE IMAGEM RESTAURADO)
+# PÁGINA 1: UPLOAD DE ARQUIVOS (COM IMAGEM E EMAIL .MSG)
 # ==============================================================================
 if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     st.subheader("📁 Passo 1: Upload e Cruzamento das Bases")
-    st.write("Carregue os ficheiros do ANIEL, TOA, Consultivo e a imagem de resumo do dia para processamento.")
+    st.write("Carregue os ficheiros do ANIEL, TOA, Consultivo, a imagem de resumo e opcionalmente o e-mail (.msg) do dia.")
     
     col_u1, col_u2 = st.columns(2)
     with col_u1:
@@ -362,14 +368,41 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
     with col_u4:
         img_upload = st.file_uploader("Imagem de Resumo do Dia (OS Inicial e Montados)", type=["png", "jpg", "jpeg"], key="img_drag_drop_p1")
 
-    # Mapeamento padrão obtido da imagem de referência enviada pelo usuário
+    up_msg = st.file_uploader("E-mail com Parados/Montados (.msg)", type=["msg"], key="u_msg")
+
     img_valores_os = {"NET-ABCDM": 518, "NET-Guarulhos": 596, "NET-LESTE": 522}
     img_valores_montados = {"NET-ABCDM": 64, "NET-Guarulhos": 82, "NET-LESTE": 80}
     
     if img_upload is not None:
-        st.success("🖼️ Imagem de resumo do dia carregada e mapeada com sucesso!")
+        st.success("🖼️ Imagem de resumo do dia carregada com sucesso!")
         st.session_state["img_os"] = img_valores_os
         st.session_state["img_montados"] = img_valores_montados
+
+    if up_msg is not None and HAS_EXTRACT_MSG:
+        try:
+            msg_bytes = up_msg.read()
+            msg = extract_msg.Message(io.BytesIO(msg_bytes))
+            assunto = str(msg.subject)
+            corpo = str(msg.body)
+            
+            match_data = re.search(r'\d{2}/\d{2}/\d{4}', assunto + " " + corpo)
+            if match_data:
+                st.session_state["email_data_ext"] = match_data.group(0)
+
+            email_montados = {}
+            for b_key, b_nome in [("NET-ABCDM", "ABCDM"), ("NET-Guarulhos", "GUARULHOS"), ("NET-LESTE", "LESTE")]:
+                pos = corpo.upper().find(b_nome)
+                if pos != -1:
+                    bloco = corpo[pos:pos+400]
+                    m_mont = re.search(r'MONTADOS\s*[-–:]\s*(\d+)', bloco, re.IGNORECASE)
+                    if m_mont:
+                        email_montados[b_key] = int(m_mont.group(1))
+
+            if email_montados:
+                st.session_state["img_montados"] = email_montados
+            st.success("📧 E-mail (.msg) processado com sucesso!")
+        except Exception as e:
+            st.warning(f"Aviso ao ler o .msg: {e}")
 
     if up_aniel is not None:
         if st.button("🚀 Processar Arquivos e Cruzar Bases", type="primary"):
@@ -385,7 +418,9 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                         if not datas_a.empty:
                             data_aniel_str = datas_a.iloc[0].strftime("%d/%m/%Y")
 
-                    if data_aniel_str:
+                    if "email_data_ext" in st.session_state:
+                        st.session_state["data_formatada_ativa"] = st.session_state["email_data_ext"]
+                    elif data_aniel_str:
                         st.session_state["data_formatada_ativa"] = data_aniel_str
 
                     col_proj = next((c for c in df_aniel.columns if c.lower() == "projeto"), "Projeto")
