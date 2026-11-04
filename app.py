@@ -23,6 +23,13 @@ st.set_page_config(
 # --- URL DA PLANILHA DO GOOGLE SHEETS ---
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1bF7cQaoEkj-UuKCGmJ4PThoy-CdSPlVg8i3XEB6cu58/edit?gid=0#gid=0"
 
+# --- REGRAS GLOBAIS DE SUPERVISORES POR BASE ---
+MAPA_SUPERVISORES_BASE = {
+    "NET-ABCDM": ["EDSON MARCO", "MAICON", "NELSON", "APOIO"],
+    "NET-Guarulhos": ["ADRIANO", "DANIELE", "FERNANDO", "PALOMA"],
+    "NET-LESTE": ["ALAN", "ELISANGELA", "FRANCISCO", "FRANCISO", "JOAO CARLOS", "MIRON"]
+}
+
 # --- FUNÇÕES DE NAVEGAÇÃO ---
 def ir_para_passo_2():
     st.session_state["pagina_atual"] = "2. Dados Operacionais por Base"
@@ -114,14 +121,14 @@ def remover_acentos(txt):
     return "".join([c for c in nfkd if not unicodedata.combining(c)])
 
 def limpar_texto(val):
-    """Remove acentos, espaços duplos e padroniza para maiúsculas para cruzamento infalível."""
+    """Remove acentos, espaços duplos e padroniza para maiúsculas."""
     if pd.isna(val):
         return ""
     s = remover_acentos(str(val).strip().upper())
     return re.sub(r"\s+", " ", s)
 
 def padrao_quebra_categoria(val, tipo_servico_norm=""):
-    """Padroniza a categoria da coluna QUEBRAS (INSTALAÇÃO, SERVIÇOS ou RETORNO) mesmo se faltar na aba DESC OS."""
+    """Padroniza a categoria da coluna QUEBRAS (INSTALAÇÃO, SERVIÇOS ou RETORNO)."""
     v = limpar_texto(val)
     ts = limpar_texto(tipo_servico_norm)
     
@@ -160,6 +167,230 @@ def filtrar_por_contrato_unico(df):
     return df
 
 # ==============================================================================
+# LÓGICA DO CONSULTIVO EXTRAÍDA DO CÓDIGO DA TV (TELAS 5, 6 E 18)
+# ==============================================================================
+def identificar_base_e_supervisor_consultivo(sup_str, base_col_str=""):
+    sup_clean = limpar_texto(sup_str)
+    for base_key, lista_sups in MAPA_SUPERVISORES_BASE.items():
+        for of_sup in lista_sups:
+            prim_nome = limpar_texto(of_sup.split()[0])
+            if prim_nome and prim_nome in sup_clean:
+                sup_canonico = "FRANCISCO" if prim_nome == "FRANCISO" else of_sup
+                return base_key, sup_canonico
+    if base_col_str:
+        b_norm = normalizar_nome_base(base_col_str)
+        if b_norm in MAPA_SUPERVISORES_BASE:
+            return b_norm, sup_clean if sup_clean else "GERAL"
+    return "DESCARTADO", "DESCARTADO"
+
+def processar_planilha_consultivo(df_cons_raw, df_aniel, data_ref_str):
+    """
+    Replica exatamente a lógica do Consultivo das Telas 5, 6 e 18 da TV:
+    - Separa por Supervisor e Base
+    - Contabiliza Contratos (nunique) e Soma de Produtos/O.S. (QTD_PRODUTOS_CALC)
+    - Filtra Hoje (data_ref_str) vs. Passado (1º dia do mês até ontem)
+    - Calcula a Projeção Mensal (media_diaria_passada * total_dias_uteis_mes)
+    """
+    df_cons = df_cons_raw.copy()
+    # Caso o arquivo Excel tenha múltiplas abas e tenha lido outra, garante limpeza dos cabeçalhos
+    df_cons.columns = [
+        unicodedata.normalize('NFKD', str(c)).encode('ASCII', 'ignore').decode('utf-8').strip().upper().replace(' ', '_')
+        for c in df_cons.columns
+    ]
+
+    # 1. Coluna de Quantidade de Produtos / O.S. (igual à TV: 'QTD' e 'PRODUTO')
+    col_qtd = next((c for c in df_cons.columns if 'QTD' in c and ('PRODUTO' in c or 'OS' in c or 'SERV' in c)), None)
+    if not col_qtd:
+        col_qtd = next((c for c in df_cons.columns if c in ['QTD', 'QUANTIDADE', 'PRODUTOS', 'QTD_PRODUTOS', 'OS', 'TOTAL_OS']), None)
+    col_obs = next((c for c in df_cons.columns if 'OBSERVACAO' in c or 'OBS' in c), None)
+
+    if col_qtd:
+        df_cons['QTD_PRODUTOS_CALC'] = pd.to_numeric(
+            df_cons[col_qtd].astype(str).str.replace(',', '.'), errors='coerce'
+        ).fillna(0).astype(int)
+    elif col_obs:
+        def extrair_qtd_obs(texto):
+            if pd.isna(texto):
+                return 0
+            txt_adj = str(texto).upper().replace("OC", "/")
+            palavras = re.split(r'[\s/.,;:|\-()\[\]{}]+', txt_adj)
+            os_enc = [p.strip() for p in palavras if len(p.strip()) >= 7 and p.strip().isdigit()]
+            return max(1, len(set(os_enc))) if str(texto).strip() != "" else 0
+        df_cons['QTD_PRODUTOS_CALC'] = df_cons[col_obs].apply(extrair_qtd_obs)
+    else:
+        df_cons['QTD_PRODUTOS_CALC'] = 1
+
+    # 2. Coluna de Supervisor e Base
+    col_sup = next((c for c in df_cons.columns if 'SUPERV' in c), None)
+    col_base = next((c for c in df_cons.columns if any(k in c for k in ['PROJETO', 'BASE', 'REGIONAL', 'CIDADE', 'UNIDADE'])), None)
+
+    bases_list = []
+    sups_list = []
+    for _, row in df_cons.iterrows():
+        s_val = row.get(col_sup, '') if col_sup else ''
+        b_val = row.get(col_base, '') if col_base else ''
+        b_res, s_res = identificar_base_e_supervisor_consultivo(s_val, b_val)
+        bases_list.append(b_res)
+        sups_list.append(s_res)
+
+    df_cons['BASE_CLEAN'] = bases_list
+    df_cons['SUPERVISOR_CLEAN'] = sups_list
+
+    df_cards = df_cons[df_cons['BASE_CLEAN'] != "DESCARTADO"].copy()
+
+    # 3. Coluna de Contrato (para contagem de contratos únicos como na TV)
+    col_contrato_cons = next((c for c in df_cards.columns if 'CONTRATO' in c or 'OS' in c or 'O.S' in c or 'PEDIDO' in c or 'PROPOSTA' in c), None)
+
+    def count_contracts(df_x):
+        if df_x is None or df_x.empty:
+            return 0
+        if col_contrato_cons and col_contrato_cons in df_x.columns:
+            s_c = df_x[col_contrato_cons].dropna().astype(str).str.strip()
+            s_c = s_c[~s_c.isin(['', 'NAN', 'NONE', '0', '0.0'])]
+            if not s_c.empty:
+                return int(s_c.nunique())
+        return int(len(df_x))
+
+    # 4. Datas e Calendário (exatamente como nas Telas 5 e 6 da TV)
+    try:
+        hoje_ref = datetime.strptime(str(data_ref_str).strip(), "%d/%m/%Y")
+    except Exception:
+        hoje_ref = datetime.now()
+
+    ano, mes = hoje_ref.year, hoje_ref.month
+    _, num_dias = calendar.monthrange(ano, mes)
+
+    primeiro_dia_mes = hoje_ref.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    hoje_meia_noite = hoje_ref.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    total_dias_uteis_mes = 0
+    dias_uteis_passados = 0
+    for d in range(1, num_dias + 1):
+        data_loop = datetime(ano, mes, d)
+        if data_loop.weekday() != 6:  # Exclui domingos
+            total_dias_uteis_mes += 1
+            if data_loop < hoje_meia_noite:
+                dias_uteis_passados += 1
+
+    dias_restantes = sum(1 for d in range(hoje_ref.day, num_dias + 1) if calendar.weekday(ano, mes, d) != 6)
+    if dias_restantes <= 0:
+        dias_restantes = 1
+
+    col_data = next((c for c in df_cards.columns if 'DATA' in c or 'DT' in c or 'DIA' in c), None)
+    if col_data and not df_cards.empty:
+        raw_dt_col = df_cards[col_data]
+        if pd.api.types.is_datetime64_any_dtype(raw_dt_col):
+            df_cards['DATA_OBJ'] = pd.to_datetime(raw_dt_col, errors='coerce').dt.normalize()
+        else:
+            s_dt = raw_dt_col.astype(str).str.strip().str[:10]
+            s_dt_parsed = pd.to_datetime(s_dt, format='%d/%m/%Y', errors='coerce')
+            mask_na = s_dt_parsed.isna()
+            if mask_na.any():
+                s_dt_parsed.loc[mask_na] = pd.to_datetime(s_dt.loc[mask_na], format='%Y-%m-%d', errors='coerce')
+            mask_na2 = s_dt_parsed.isna()
+            if mask_na2.any():
+                s_dt_parsed.loc[mask_na2] = pd.to_datetime(s_dt.loc[mask_na2], dayfirst=True, errors='coerce')
+            df_cards['DATA_OBJ'] = s_dt_parsed.dt.normalize()
+    else:
+        df_cards['DATA_OBJ'] = hoje_meia_noite
+
+    hoje_contratos = {}
+    hoje_produtos = {}
+    proj_contratos_mes = {}
+    proj_produtos_mes = {}
+    acum_contratos_mes = {}
+    acum_produtos_mes = {}
+    historico_diario_prod = {}
+    detalhe_supervisores = {}
+
+    for b_k in ["NET-ABCDM", "NET-Guarulhos", "NET-LESTE"]:
+        df_b = df_cards[df_cards['BASE_CLEAN'] == b_k].copy()
+        if df_b.empty:
+            hoje_contratos[b_k] = 0
+            hoje_produtos[b_k] = 0
+            proj_contratos_mes[b_k] = 0
+            proj_produtos_mes[b_k] = 0
+            acum_contratos_mes[b_k] = 0
+            acum_produtos_mes[b_k] = 0
+            historico_diario_prod[b_k] = {}
+            detalhe_supervisores[b_k] = {}
+            continue
+
+        # Filtra registros do mês de referência
+        df_mes = df_b[(df_b['DATA_OBJ'].notna()) & (df_b['DATA_OBJ'].dt.year == ano) & (df_b['DATA_OBJ'].dt.month == mes)].copy()
+        if df_mes.empty:
+            df_mes = df_b.copy()
+
+        tot_prod_mes = int(df_mes['QTD_PRODUTOS_CALC'].sum())
+        tot_cont_mes = count_contracts(df_mes)
+
+        df_hoje = df_mes[df_mes['DATA_OBJ'] == hoje_meia_noite].copy()
+        prod_hoje = int(df_hoje['QTD_PRODUTOS_CALC'].sum()) if not df_hoje.empty else 0
+        cont_hoje = count_contracts(df_hoje) if not df_hoje.empty else 0
+
+        df_passado = df_mes[(df_mes['DATA_OBJ'] >= primeiro_dia_mes) & (df_mes['DATA_OBJ'] < hoje_meia_noite)].copy()
+        prod_passado = int(df_passado['QTD_PRODUTOS_CALC'].sum()) if not df_passado.empty else 0
+        cont_passado = count_contracts(df_passado) if not df_passado.empty else 0
+
+        # Regra de Projeção da TV (Tela 5): media_diaria do passado * total_dias_uteis_mes
+        if dias_uteis_passados > 0 and prod_passado > 0:
+            media_prod = prod_passado / dias_uteis_passados
+            proj_p = int(round(media_prod * total_dias_uteis_mes))
+            media_cont = cont_passado / dias_uteis_passados
+            proj_c = int(round(media_cont * total_dias_uteis_mes))
+        elif prod_hoje > 0:
+            proj_p = int(round(prod_hoje * total_dias_uteis_mes))
+            proj_c = int(round(cont_hoje * total_dias_uteis_mes))
+        else:
+            proj_p = tot_prod_mes
+            proj_c = tot_cont_mes
+
+        if proj_p < tot_prod_mes:
+            proj_p = tot_prod_mes
+        if proj_c < tot_cont_mes:
+            proj_c = tot_cont_mes
+
+        hoje_contratos[b_k] = cont_hoje
+        hoje_produtos[b_k] = prod_hoje
+        proj_contratos_mes[b_k] = proj_c
+        proj_produtos_mes[b_k] = proj_p
+        acum_contratos_mes[b_k] = tot_cont_mes
+        acum_produtos_mes[b_k] = tot_prod_mes
+
+        # Histórico diário para sincronizar com o Sheets
+        mapa_d = {}
+        for dt_val, grp in df_mes.groupby('DATA_OBJ'):
+            if pd.notna(dt_val):
+                mapa_d[dt_val.strftime("%d/%m/%Y")] = int(grp['QTD_PRODUTOS_CALC'].sum())
+        historico_diario_prod[b_k] = mapa_d
+
+        # Detalhamento por supervisor (Telas 5 e 6 da TV)
+        sup_dict = {}
+        for s_clean, grp_s in df_mes.groupby('SUPERVISOR_CLEAN'):
+            grp_s_hoje = df_hoje[df_hoje['SUPERVISOR_CLEAN'] == s_clean] if not df_hoje.empty else pd.DataFrame()
+            sup_dict[s_clean] = {
+                "contratos_mes": count_contracts(grp_s),
+                "produtos_mes": int(grp_s['QTD_PRODUTOS_CALC'].sum()),
+                "contratos_hoje": count_contracts(grp_s_hoje),
+                "produtos_hoje": int(grp_s_hoje['QTD_PRODUTOS_CALC'].sum()) if not grp_s_hoje.empty else 0
+            }
+        detalhe_supervisores[b_k] = sup_dict
+
+    return {
+        "hoje_contratos": hoje_contratos,
+        "hoje_produtos": hoje_produtos,
+        "proj_contratos": proj_contratos_mes,
+        "proj_produtos": proj_produtos_mes,
+        "acum_contratos": acum_contratos_mes,
+        "acum_produtos": acum_produtos_mes,
+        "historico_diario": historico_diario_prod,
+        "supervisores": detalhe_supervisores,
+        "dias_restantes": dias_restantes,
+        "dias_uteis_passados": dias_uteis_passados,
+        "total_dias_uteis_mes": total_dias_uteis_mes
+    }
+
+# ==============================================================================
 # FUNÇÃO UNIFICADA DE CÁLCULO DE MÉTRICAS (USADA NO PASSO 2 E NO PASSO 3)
 # ==============================================================================
 def calcular_metricas_completas(df_sub_raw, montados, df_base_bruta=None):
@@ -178,7 +409,6 @@ def calcular_metricas_completas(df_sub_raw, montados, df_base_bruta=None):
             "_raw_q_mig": 0, "_raw_tot_mig": 0, "_raw_q_pme": 0, "_raw_tot_pme": 0
         }
 
-    # Base de referência para Retorno WO (usa df_base_bruta se fornecida, senão df_sub_raw)
     df_ref_ret = df_base_bruta if (df_base_bruta is not None and not df_base_bruta.empty) else df_sub_raw
     mask_ret = pd.Series(False, index=df_ref_ret.index)
     if "QUEBRAS" in df_ref_ret.columns:
@@ -188,13 +418,11 @@ def calcular_metricas_completas(df_sub_raw, montados, df_base_bruta=None):
     df_ret_wo = filtrar_por_contrato_unico(df_ref_ret[mask_ret])
     retorno_wo_count = len(df_ret_wo)
 
-    # Remove RETORNO DE CREDENCIADA para as métricas operacionais de O.S.
     if "Tipo de Serviço" in df_sub_raw.columns:
         df_sub = df_sub_raw[~eh_retorno_credenciada(df_sub_raw["Tipo de Serviço"])].copy()
     else:
         df_sub = df_sub_raw.copy()
 
-    # Garante que QUEBRAS tenha valor padronizado em todas as linhas
     if "QUEBRAS" in df_sub.columns and "Tipo de Serviço" in df_sub.columns:
         df_sub["_quebra_padrao_"] = [
             padrao_quebra_categoria(q, ts) for q, ts in zip(df_sub["QUEBRAS"], df_sub["Tipo de Serviço"])
@@ -247,7 +475,6 @@ def calcular_metricas_completas(df_sub_raw, montados, df_base_bruta=None):
     q_ins, raw_q_ins, raw_tot_ins = calc_taxa_quebra_direta(df_ins)
     q_serv, raw_q_serv, raw_tot_serv = calc_taxa_quebra_direta(df_serv)
     
-    # ND: Comparação sem acentos para nunca falhar com "ADESÃO" ou "INSTALAÇÃO"
     servicos_nd_alvos = {
         "ADESAO - INSTALACAO DE ASSINATURA",
         "ADESAO - INSTALACAO DE ASSINATURA DIGITAL",
@@ -267,7 +494,6 @@ def calcular_metricas_completas(df_sub_raw, montados, df_base_bruta=None):
     efic_nd = max(0.0, 1.0 - (nd_improd / den_nd)) if den_nd > 0 else 0.0
     proj_nd = int(round(nd_prod + (nd_aberto * efic_nd), 0))
 
-    # GPON e MIGRAÇÃO
     df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
     df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
     
@@ -277,7 +503,6 @@ def calcular_metricas_completas(df_sub_raw, montados, df_base_bruta=None):
     df_mig_ins = df_mig[df_mig["_quebra_padrao_"] == "INSTALAÇÃO"] if not df_mig.empty else pd.DataFrame()
     q_mig, raw_q_mig, raw_tot_mig = calc_taxa_quebra_direta(df_mig_ins if not df_mig_ins.empty else df_mig)
     
-    # PME por CONTRATO (Contagem de WO únicas e não soma de O.S.)
     pme_col = df_sub["PME"].fillna("").astype(str).str.strip().str.upper() if "PME" in df_sub.columns else pd.Series(dtype=str)
     df_pme_os = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
     df_pme_wo = filtrar_por_contrato_unico(df_pme_os)
@@ -406,18 +631,13 @@ def calcular_projecao_os_base(base_proj, dias_uteis_mes=25, os_hoje=None, data_h
 def calcular_projecao_consultivo_base(base_proj, dias_uteis_mes=25, consultivo_hoje=None, data_hoje_str=None):
     base_norm = normalizar_nome_base(base_proj)
     
-    hist_arq = st.session_state.get("consultivo_historico_arquivo", {}).get(base_norm, {})
-    if hist_arq:
-        hist_copy = dict(hist_arq)
-        if data_hoje_str and consultivo_hoje is not None and consultivo_hoje > 0:
-            hist_copy[str(data_hoje_str).strip()] = int(consultivo_hoje)
-        if hist_copy:
-            soma_total = sum(hist_copy.values())
-            qtd_dias = max(1, len(hist_copy))
-            media_diaria = soma_total / qtd_dias
-            projecao = int(round(media_diaria * dias_uteis_mes, 0))
-            return projecao, media_diaria, qtd_dias
+    # 1. Usa diretamente a projeção calculada pela regra da TV (Tela 5) se o arquivo foi carregado
+    if "consultivo_proj_produtos" in st.session_state and base_norm in st.session_state["consultivo_proj_produtos"]:
+        proj_tv = int(st.session_state["consultivo_proj_produtos"][base_norm])
+        dias_pass = max(1, st.session_state.get("consultivo_dias_passados", 1))
+        return proj_tv, proj_tv / max(1, dias_uteis_mes), dias_pass
 
+    # 2. Fallback: lê do Google Sheets ignorando valores distorcidos
     df_c = obter_df_historico_consultivo().copy()
     if not df_c.empty and "Base" in df_c.columns:
         df_c["_base_norm_"] = df_c["Base"].apply(normalizar_nome_base)
@@ -576,95 +796,6 @@ def processar_arquivo_msg(up_msg):
 
     return data_ext, parados_por_sup, tecnicos_extraidos
 
-# --- FUNÇÃO PARA PROCESSAR O ARQUIVO CONSULTIVO ---
-def processar_planilha_consultivo(df_cons, df_aniel, data_ref_str):
-    df_cons = df_cons.copy()
-    df_cons.columns = [str(c).strip() for c in df_cons.columns]
-    
-    col_obs = next((c for c in df_cons.columns if "observacao" in limpar_texto(c).lower() or "obs" in c.lower()), df_cons.columns[0])
-    col_c_projeto = next((c for c in df_cons.columns if any(k in c.lower() for k in ["projeto", "base", "regional", "un", "area", "cidade"])), None)
-    col_c_data = next((c for c in df_cons.columns if any(k in c.lower() for k in ["data", "dt", "criacao", "abertura", "dia", "agendamento"])), None)
-
-    mapa_os_base = {}
-    if df_aniel is not None and not df_aniel.empty:
-        col_proj_a = next((c for c in df_aniel.columns if c.lower() == "projeto"), None)
-        if col_proj_a:
-            for c_cand in df_aniel.columns:
-                if any(k in c_cand.lower() for k in ["contrato", "os", "ordem", "numero"]):
-                    for _, r_a in df_aniel[[c_cand, col_proj_a]].dropna().iterrows():
-                        ch = limpar_chave(r_a[c_cand])
-                        if len(ch) >= 7:
-                            mapa_os_base[ch] = normalizar_nome_base(r_a[col_proj_a])
-
-    def extrair_os_consultivo(texto):
-        if pd.isna(texto):
-            return []
-        txt_adj = str(texto).upper().replace("OC", "/")
-        palavras = re.split(r'[\s/.,;:|\-()\[\]{}]+', txt_adj)
-        os_encontradas = []
-        for p in palavras:
-            p_trim = p.strip()
-            if len(p_trim) >= 7 and p_trim.isdigit():
-                os_encontradas.append(p_trim)
-        return os_encontradas
-
-    os_por_base_data = {"NET-ABCDM": {}, "NET-Guarulhos": {}, "NET-LESTE": {}}
-    os_por_base_geral = {"NET-ABCDM": set(), "NET-Guarulhos": set(), "NET-LESTE": set()}
-
-    for _, row in df_cons.iterrows():
-        lista_os = extrair_os_consultivo(row.get(col_obs, ""))
-        if not lista_os:
-            continue
-
-        base_linha = None
-        if col_c_projeto and pd.notna(row.get(col_c_projeto)):
-            b_cand = normalizar_nome_base(row.get(col_c_projeto))
-            if b_cand in os_por_base_geral:
-                base_linha = b_cand
-        
-        if not base_linha:
-            for cand_val in row.values:
-                b_cand = normalizar_nome_base(cand_val)
-                if b_cand in os_por_base_geral:
-                    base_linha = b_cand
-                    break
-
-        data_linha_str = None
-        if col_c_data and pd.notna(row.get(col_c_data)):
-            dt_parsed = pd.to_datetime(row.get(col_c_data), dayfirst=True, errors="coerce")
-            if pd.notna(dt_parsed):
-                data_linha_str = dt_parsed.strftime("%d/%m/%Y")
-
-        for num_os in lista_os:
-            b_final = base_linha or mapa_os_base.get(num_os)
-            if b_final in os_por_base_geral:
-                os_por_base_geral[b_final].add(num_os)
-                d_key = data_linha_str if data_linha_str else str(data_ref_str).strip()
-                if d_key not in os_por_base_data[b_final]:
-                    os_por_base_data[b_final][d_key] = set()
-                os_por_base_data[b_final][d_key].add(num_os)
-
-    hoje_totais = {}
-    historico_diario = {}
-    totais_mes_arquivo = {}
-
-    for b_k in ["NET-ABCDM", "NET-Guarulhos", "NET-LESTE"]:
-        mapa_datas = {d: len(conj) for d, conj in os_por_base_data[b_k].items()}
-        historico_diario[b_k] = mapa_datas
-        totais_mes_arquivo[b_k] = len(os_por_base_geral[b_k])
-        
-        if str(data_ref_str).strip() in mapa_datas:
-            hoje_totais[b_k] = mapa_datas[str(data_ref_str).strip()]
-        elif len(mapa_datas) == 1:
-            hoje_totais[b_k] = list(mapa_datas.values())[0]
-        elif mapa_datas:
-            datas_ord = sorted(mapa_datas.keys(), key=lambda x: datetime.strptime(x, "%d/%m/%Y") if re.match(r'\d{2}/\d{2}/\d{4}', x) else datetime.min)
-            hoje_totais[b_k] = mapa_datas[datas_ord[-1]]
-        else:
-            hoje_totais[b_k] = 0
-
-    return hoje_totais, historico_diario, totais_mes_arquivo
-
 # --- INICIALIZAÇÃO DE ESTADO E NAVEGAÇÃO ---
 etapas = ["1. Upload de Arquivos", "2. Dados Operacionais por Base", "3. Visualização da Prévia"]
 
@@ -685,6 +816,8 @@ if "processado_sucesso" not in st.session_state:
     st.session_state.processado_sucesso = False
 if "consultivo_totais" not in st.session_state:
     st.session_state.consultivo_totais = {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0}
+if "consultivo_os_hoje" not in st.session_state:
+    st.session_state.consultivo_os_hoje = {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0}
 
 bases_config = [
     {"label": "ABCDM", "projeto": "NET-ABCDM"},
@@ -731,7 +864,7 @@ else:
     data_selecionada = st.session_state.get("data_formatada_ativa", st.session_state.get("data_formatada", "03/11/2026"))
     modo_historico_salvo = False
 
-def ler_arquivo_seguro(uploaded_file):
+def ler_arquivo_seguro(uploaded_file, prefer_sheet=None):
     uploaded_file.seek(0)
     nome = uploaded_file.name.lower()
     if nome.endswith(".csv"):
@@ -740,6 +873,15 @@ def ler_arquivo_seguro(uploaded_file):
         except Exception:
             uploaded_file.seek(0)
             return pd.read_csv(uploaded_file, sep=";", encoding="latin1", on_bad_lines="skip")
+    if prefer_sheet:
+        try:
+            uploaded_file.seek(0)
+            xl = pd.ExcelFile(uploaded_file, engine="openpyxl")
+            aba_alvo = next((s for s in xl.sheet_names if prefer_sheet.upper() in s.upper()), xl.sheet_names[0])
+            uploaded_file.seek(0)
+            return pd.read_excel(uploaded_file, sheet_name=aba_alvo, engine="openpyxl")
+        except Exception:
+            pass
     try:
         uploaded_file.seek(0)
         return pd.read_excel(uploaded_file, engine="openpyxl")
@@ -815,7 +957,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
 
     if up_aniel is not None:
         if st.button("🚀 Processar Arquivos e Cruzar Bases", type="primary"):
-            with st.spinner("Validando datas, processando cruzamento e aplicando regras..."):
+            with st.spinner("Validando datas, processando cruzamento e aplicando regras do Consultivo..."):
                 try:
                     df_aniel = ler_arquivo_seguro(up_aniel)
                     df_aniel.columns = [str(c).strip() for c in df_aniel.columns]
@@ -867,12 +1009,19 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
 
                     data_ref_proc = st.session_state.get("data_formatada_ativa", datetime.now().strftime("%d/%m/%Y"))
 
+                    # --- PROCESSAMENTO DO CONSULTIVO COM A LÓGICA DA TV (TELAS 5, 6 e 18) ---
                     if up_consultivo is not None:
-                        df_cons = ler_arquivo_seguro(up_consultivo)
-                        hoje_tot, hist_diario, tot_mes_arq = processar_planilha_consultivo(df_cons, df_aniel, data_ref_proc)
-                        st.session_state["consultivo_totais"] = hoje_tot
-                        st.session_state["consultivo_historico_arquivo"] = hist_diario
-                        st.session_state["consultivo_acumulado_mes"] = tot_mes_arq
+                        df_cons = ler_arquivo_seguro(up_consultivo, prefer_sheet="CONSULTIVO")
+                        res_cons = processar_planilha_consultivo(df_cons, df_aniel, data_ref_proc)
+                        st.session_state["consultivo_totais"] = res_cons["hoje_contratos"]
+                        st.session_state["consultivo_os_hoje"] = res_cons["hoje_produtos"]
+                        st.session_state["consultivo_proj_produtos"] = res_cons["proj_produtos"]
+                        st.session_state["consultivo_proj_contratos"] = res_cons["proj_contratos"]
+                        st.session_state["consultivo_acumulado_mes"] = res_cons["acum_contratos"]
+                        st.session_state["consultivo_acum_produtos_mes"] = res_cons["acum_produtos"]
+                        st.session_state["consultivo_historico_arquivo"] = res_cons["historico_diario"]
+                        st.session_state["consultivo_supervisores"] = res_cons["supervisores"]
+                        st.session_state["consultivo_dias_passados"] = res_cons["dias_uteis_passados"]
 
                     for col in ["ST1", "ST2", "ST3", "CANCELADAS", "PME"]:
                         if col not in df_aniel.columns:
@@ -1093,7 +1242,9 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
             st.session_state["img_os"] = {"NET-ABCDM": 529, "NET-Guarulhos": 611, "NET-LESTE": 497}
         img_os_dict = st.session_state["img_os"]
         consultivo_totais = st.session_state.get("consultivo_totais", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
+        consultivo_os_hoje_dict = st.session_state.get("consultivo_os_hoje", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
         consultivo_acum_mes = st.session_state.get("consultivo_acumulado_mes", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
+        consultivo_acum_prod_mes = st.session_state.get("consultivo_acum_produtos_mes", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
         email_parados_auto = st.session_state.get("email_parados_auto", {})
         email_tecnicos_lista = st.session_state.get("email_tecnicos_lista", [])
 
@@ -1183,7 +1334,9 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Projeção de O.S. (Mês):**\n### {fmt_br(proj_os_val)}")
 
                 with c3:
-                    meta_cons_padrao = int(soma_m_base * 8) if soma_m_base > 0 else (520 if "ABC" in b_proj else 640)
+                    # Meta padrão de consultivo (ex: 350 por supervisor como na TV ou editável)
+                    qtd_sups_validos = max(1, len([s for s in sups_base if "APOIO" not in s.upper()]))
+                    meta_cons_padrao = int(qtd_sups_validos * 350)
                     meta_cons_input = st.number_input(
                         f"Meta do Consultivo ({b_label})", 
                         value=int(st.session_state.get(f"inp_meta_c_{b_proj}", meta_cons_padrao)), 
@@ -1193,18 +1346,18 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     )
 
                     hoje_c_b = int(consultivo_totais.get(b_proj, 0))
-                    proj_c_b, _, _ = calcular_projecao_consultivo_base(b_proj, dias_uteis_auto, hoje_c_b, data_formatada)
+                    os_consult_val = int(consultivo_os_hoje_dict.get(b_proj, hoje_c_b * 2))
+                    proj_c_b, _, _ = calcular_projecao_consultivo_base(b_proj, dias_uteis_auto, os_consult_val, data_formatada)
                     st.markdown(f"**Projeção do Consultivo (Mês):**\n### {fmt_br(proj_c_b)}")
 
                 with c4:
-                    hoje_c_b = int(consultivo_totais.get(b_proj, 0))
-                    st.markdown(f"**Hoje Consultivo ({data_formatada}):**\n### {fmt_br(hoje_c_b)}")
+                    st.markdown(f"**Hoje Consultivo - Contratos ({data_formatada}):**\n### {fmt_br(hoje_c_b)}")
                     st.session_state[f"inp_hoje_c_{b_proj}"] = hoje_c_b
-                    os_consult_val = hoje_c_b * 2
-                    st.markdown(f"**Total O.S. do Consultivo (Hoje):**\n### {fmt_br(os_consult_val)}")
+                    st.markdown(f"**Total O.S. / Produtos Consultivo (Hoje):**\n### {fmt_br(os_consult_val)}")
                     
                     tot_cons_mes_real = int(consultivo_acum_mes.get(b_proj, hoje_c_b))
-                    st.caption(f"📌 Acumulado Real no Mês: **{fmt_br(tot_cons_mes_real)}** consultivos (**{fmt_br(tot_cons_mes_real * 2)}** O.S. reais)")
+                    tot_prod_mes_real = int(consultivo_acum_prod_mes.get(b_proj, os_consult_val))
+                    st.caption(f"📌 Acumulado Real no Mês: **{fmt_br(tot_cons_mes_real)}** contratos | **{fmt_br(tot_prod_mes_real)}** produtos/O.S.")
 
         st.markdown("---")
         
@@ -1263,7 +1416,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 for item in bases_config:
                     b_proj = item["projeto"]
                     base_norm = normalizar_nome_base(b_proj)
-                    mapa_d_base = hist_arq_all.get(base_norm, {str(data_formatada): int(consultivo_totais.get(b_proj, 0))})
+                    mapa_d_base = hist_arq_all.get(base_norm, {str(data_formatada): int(consultivo_os_hoje_dict.get(b_proj, 0))})
 
                     for dt_k, qtd_c_val in mapa_d_base.items():
                         if not df_cons_sheet.empty and "Data" in df_cons_sheet.columns and "Base" in df_cons_sheet.columns:
@@ -1335,16 +1488,16 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     m_base = int(t_base["montados"])
                     p_base = int(t_base["parados"])
                     meta_os_b = int(st.session_state.get(f"inp_meta_os_{b_proj}", 11800))
-                    meta_c_b = int(st.session_state.get(f"inp_meta_c_{b_proj}", m_base * 8))
+                    meta_c_b = int(st.session_state.get(f"inp_meta_c_{b_proj}", 1050))
                     hoje_c_b = int(consultivo_totais.get(b_proj, 0))
+                    os_consult_b = int(consultivo_os_hoje_dict.get(b_proj, hoje_c_b * 2))
                     
                     res_b = calcular_metricas_completas(df_b_all, m_base, df_b_bruta)
                     rota_inicial_b = int(st.session_state.get(f"inp_rota_{b_proj}", img_os_dict.get(b_proj, 529)))
                     ganho_b = max(0, res_b["tot_os"] - rota_inicial_b)
 
                     proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
-                    proj_c_b, _, _ = calcular_projecao_consultivo_base(b_proj, dias_uteis, hoje_c_b, data_formatada)
-                    os_consult_b = hoje_c_b * 2
+                    proj_c_b, _, _ = calcular_projecao_consultivo_base(b_proj, dias_uteis, os_consult_b, data_formatada)
                     os_sem_consult_val = int(round(res_b["proj_dia"] - os_consult_b, 0))
 
                     novas_linhas_previa.append({
@@ -1625,6 +1778,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
         metricas_bases = {}
         consultivo_totais = st.session_state.get("consultivo_totais", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
+        consultivo_os_hoje_dict = st.session_state.get("consultivo_os_hoje", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
 
         for item in bases_config:
             b_label = item["label"]
@@ -1642,8 +1796,10 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             p_base = sum([int(st.session_state.get(f"p_{b_proj}_{s}", 0)) for s in sups_base])
 
             meta_os_b = int(st.session_state.get(f"inp_meta_os_{b_proj}", 11800 if "ABCDM" in b_proj else 12200))
-            meta_c_b = int(st.session_state.get(f"inp_meta_c_{b_proj}", m_base * 8))
+            qtd_sups_validos = max(1, len([s for s in sups_base if "APOIO" not in s.upper()]))
+            meta_c_b = int(st.session_state.get(f"inp_meta_c_{b_proj}", qtd_sups_validos * 350))
             hoje_c_b = int(consultivo_totais.get(b_proj, 0))
+            os_consult_b = int(consultivo_os_hoje_dict.get(b_proj, hoje_c_b * 2))
             
             res_b = calcular_metricas_completas(df_b_all, m_base, df_b_bruta)
             
@@ -1651,12 +1807,11 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             rota_inicial_b = buscar_os_inicial_sheets(b_proj, data_formatada)
             ganho_b = max(0, tot_os_previa_b - rota_inicial_b)
 
-            os_sem_consult_val = int(round(res_b["proj_dia"] - (hoje_c_b * 2), 0))
+            os_sem_consult_val = int(round(res_b["proj_dia"] - os_consult_b, 0))
             res_b["os_sem_c"] = os_sem_consult_val
 
             proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
-            proj_c_b, _, _ = calcular_projecao_consultivo_base(b_proj, dias_uteis, hoje_c_b, data_formatada)
-            os_consult_b = hoje_c_b * 2
+            proj_c_b, _, _ = calcular_projecao_consultivo_base(b_proj, dias_uteis, os_consult_b, data_formatada)
 
             g_parados += p_base; g_montados += m_base; g_meta_os += meta_os_b; g_proj_os += proj_os_b
             g_meta_cons += meta_c_b; g_proj_cons += proj_c_b; g_hoje_cons += hoje_c_b; g_os_cons += os_consult_b
@@ -1780,12 +1935,14 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
 
         # --- BLOCOS INDEPENDENTES POR BASE COM OS SUPERVISORES ---
         st.markdown("### 🏢 Detalhamento Operacional Separado por Base")
+        cons_sups_all = st.session_state.get("consultivo_supervisores", {})
 
         for item in bases_config:
             b_label = item["label"]
             b_proj = item["projeto"]
             m = metricas_bases[b_proj]
             res_b = m["res"]
+            cons_sups_base = cons_sups_all.get(b_proj, {})
             
             with st.expander(f"📂 Base: {b_label} (Clique para Expandir/Recolher Detalhamento)"):
                 df_b_all = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()].copy() if isinstance(df_valido, pd.DataFrame) and "Projeto" in df_valido.columns else pd.DataFrame()
@@ -1836,26 +1993,43 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                     res_s = calcular_metricas_completas(df_s, m_sup)
                     primeiro_nome = s.split()[0]
                     
+                    # Busca dados do Consultivo para este supervisor (como nas Telas 5 e 6 da TV)
+                    dados_cons_s = {"contratos_hoje": 0, "produtos_hoje": 0, "produtos_mes": 0}
+                    for k_cs, val_cs in cons_sups_base.items():
+                        if k_cs.split()[0] in s.upper() or primeiro_nome in k_cs:
+                            dados_cons_s = val_cs
+                            break
+                    
+                    c_hoje_s = dados_cons_s["contratos_hoje"]
+                    os_c_hoje_s = dados_cons_s["produtos_hoje"]
+                    os_sem_c_s = int(round(res_s["proj_dia"] - os_c_hoje_s, 0))
+                    
                     tabela_bloco_html.append(
                         f'<tr class="tr-sup">'
                         f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
                         f'<td>{fmt_br(p_sup)}</td>'
                         f'<td class="col-destaque-amarelo">{fmt_br(m_sup)}</td>'
-                        f'<td></td><td></td><td></td><td></td><td></td><td></td>'
+                        f'<td></td><td></td>'
+                        f'<td>350</td><td>{fmt_br(dados_cons_s["produtos_mes"])}</td><td>{fmt_br(c_hoje_s)}</td><td>{fmt_br(os_c_hoje_s)}</td>'
                         f'<td>{fmt_br(res_s["tot_os"])}</td>'
                         f'<td>{fmt_br(res_s["os_aberta"])}</td>'
                         f'<td>{fmt_br(res_s["pontos"])}</td>'
                         f'<td>{fmt_br(res_s["efic"], 1)}%</td>'
                         f'<td class="col-destaque-azul">{fmt_br(res_s["media_os"], 2)}</td>'
                         f'<td>{fmt_br(res_s["proj_dia"])}</td>'
-                        f'<td></td>'
+                        f'<td class="col-destaque-amarelo">{fmt_br(os_sem_c_s)}</td>'
                         f'<td>{fmt_br(res_s["q_ins"], 1)}%</td>'
                         f'<td>{fmt_br(res_s["q_serv"], 1)}%</td>'
                         f'<td>{fmt_br(res_s["q_nd"], 1)}%</td>'
                         f'<td>{fmt_br(res_s["tot_nd"])}</td>'
                         f'<td>{fmt_br(res_s["os_canc"])}</td>'
                         f'<td>{fmt_br(res_s["saiu_toa"])}</td>'
-                        f'<td></td><td></td><td></td><td></td><td></td><td></td>'
+                        f'<td></td>'
+                        f'<td>{fmt_br(res_s["tot_gpon"])}</td>'
+                        f'<td>{fmt_br(res_s["q_gpon"], 1)}%</td>'
+                        f'<td>{fmt_br(res_s["tot_mig"])}</td>'
+                        f'<td>{fmt_br(res_s["q_mig"], 1)}%</td>'
+                        f'<td>{fmt_br(res_s["canc_mig"])}</td>'
                         f'<td>{fmt_br(res_s["retorno_wo"])}</td>'
                         f'<td>{fmt_br(res_s["tot_pme"])}</td>'
                         f'<td>{fmt_br(res_s["q_pme"], 1)}%</td>'
