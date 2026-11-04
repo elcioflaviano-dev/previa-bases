@@ -132,7 +132,6 @@ def padrao_quebra_categoria(val, tipo_servico_norm=""):
     if "SERV" in v or "MUD" in v or "MANUT" in v or "REP" in v or "TROCA" in v:
         return "SERVIÇOS"
         
-    # Fallback automático pelo nome do Tipo de Serviço caso não tenha vindo na aba DESC OS
     if any(k in ts for k in ["ADESAO", "INSTALACAO", "PONTO ADICIONAL", "NOVO PONTO", "MIGRACAO", "VENDA"]):
         return "INSTALAÇÃO"
     if ts != "":
@@ -159,6 +158,155 @@ def filtrar_por_contrato_unico(df):
         df_temp = df_temp[df_temp["_chave_wo_"] != ""]
         return df_temp.drop_duplicates(subset=["_chave_wo_"], keep="first")
     return df
+
+# ==============================================================================
+# FUNÇÃO UNIFICADA DE CÁLCULO DE MÉTRICAS (USADA NO PASSO 2 E NO PASSO 3)
+# ==============================================================================
+def calcular_metricas_completas(df_sub_raw, montados, df_base_bruta=None):
+    """
+    Calcula todas as métricas de produtividade, quebras, ND, GPON, Migração,
+    Retorno WO (por contrato único) e PME (por contrato único).
+    """
+    if not isinstance(df_sub_raw, pd.DataFrame) or df_sub_raw.empty:
+        return {
+            "tot_os": 0, "os_aberta": 0, "produtivo": 0, "quebra_geral": 0, "pontos": 0,
+            "efic": 0.0, "media_os": 0.0, "proj_dia": 0, "os_canc": 0, "saiu_toa": 0,
+            "q_ins": 0.0, "q_serv": 0.0, "tot_nd": 0, "q_nd": 0.0, "tot_gpon": 0, "q_gpon": 0.0,
+            "tot_mig": 0, "q_mig": 0.0, "canc_mig": 0, "retorno_wo": 0, "tot_pme": 0, "q_pme": 0.0,
+            "canc_pme": 0, "_raw_q_ins": 0, "_raw_tot_ins": 0, "_raw_q_serv": 0, "_raw_tot_serv": 0,
+            "_raw_q_nd": 0, "_raw_tot_nd": 0, "_raw_q_gpon": 0, "_raw_tot_gpon": 0,
+            "_raw_q_mig": 0, "_raw_tot_mig": 0, "_raw_q_pme": 0, "_raw_tot_pme": 0
+        }
+
+    # Base de referência para Retorno WO (usa df_base_bruta se fornecida, senão df_sub_raw)
+    df_ref_ret = df_base_bruta if (df_base_bruta is not None and not df_base_bruta.empty) else df_sub_raw
+    mask_ret = pd.Series(False, index=df_ref_ret.index)
+    if "QUEBRAS" in df_ref_ret.columns:
+        mask_ret = mask_ret | (df_ref_ret["QUEBRAS"].apply(limpar_texto) == "RETORNO")
+    if "Tipo de Serviço" in df_ref_ret.columns:
+        mask_ret = mask_ret | (df_ref_ret["Tipo de Serviço"].apply(limpar_texto).str.contains("RETORNO", na=False))
+    df_ret_wo = filtrar_por_contrato_unico(df_ref_ret[mask_ret])
+    retorno_wo_count = len(df_ret_wo)
+
+    # Remove RETORNO DE CREDENCIADA para as métricas operacionais de O.S.
+    if "Tipo de Serviço" in df_sub_raw.columns:
+        df_sub = df_sub_raw[~eh_retorno_credenciada(df_sub_raw["Tipo de Serviço"])].copy()
+    else:
+        df_sub = df_sub_raw.copy()
+
+    # Garante que QUEBRAS tenha valor padronizado em todas as linhas
+    if "QUEBRAS" in df_sub.columns and "Tipo de Serviço" in df_sub.columns:
+        df_sub["_quebra_padrao_"] = [
+            padrao_quebra_categoria(q, ts) for q, ts in zip(df_sub["QUEBRAS"], df_sub["Tipo de Serviço"])
+        ]
+    else:
+        df_sub["_quebra_padrao_"] = ""
+
+    tot_os = len(df_sub)
+    df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+    df_improd = df_sub[df_sub["Tipo de OS"] == "IMPRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+    df_aberto = df_sub[df_sub["Tipo de OS"] == "EM ABERTO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+    df_canc = df_sub[df_sub["Tipo de OS"] == "CANCELADO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+    df_saiu = df_sub[df_sub["Tipo de OS"] == "SAIU DO TOA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
+
+    prod_count = len(df_prod)
+    improd_count = len(df_improd)
+    aberta_count = len(df_aberto)
+    
+    den_quebra = improd_count + prod_count
+    quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
+    efic = max(0.0, 1.0 - quebra_pct)
+    
+    proj_os_exec = prod_count + (aberta_count * efic)
+    proj_dia = int(round(proj_os_exec, 0))
+    
+    pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
+    pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
+    pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
+    
+    den_pts = pontos_improd + pontos_prod
+    efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
+    pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
+    
+    media_os = (proj_dia / montados) if montados > 0 else 0.0
+    
+    os_canc = len(df_canc)
+    saiu_toa = len(df_saiu)
+
+    def calc_taxa_quebra_direta(df_grupo):
+        if df_grupo is None or df_grupo.empty or "Tipo de OS" not in df_grupo.columns:
+            return 0.0, 0, 0
+        i_c = len(df_grupo[df_grupo["Tipo de OS"] == "IMPRODUTIVA"])
+        p_c = len(df_grupo[df_grupo["Tipo de OS"] == "PRODUTIVA"])
+        d_c = i_c + p_c
+        taxa = (i_c / d_c * 100.0) if d_c > 0 else 0.0
+        return taxa, i_c, d_c
+
+    df_ins = df_sub[df_sub["_quebra_padrao_"] == "INSTALAÇÃO"]
+    df_serv = df_sub[df_sub["_quebra_padrao_"] == "SERVIÇOS"]
+    q_ins, raw_q_ins, raw_tot_ins = calc_taxa_quebra_direta(df_ins)
+    q_serv, raw_q_serv, raw_tot_serv = calc_taxa_quebra_direta(df_serv)
+    
+    # ND: Comparação sem acentos para nunca falhar com "ADESÃO" ou "INSTALAÇÃO"
+    servicos_nd_alvos = {
+        "ADESAO - INSTALACAO DE ASSINATURA",
+        "ADESAO - INSTALACAO DE ASSINATURA DIGITAL",
+        "ADESAO ENTREGA STREAMING",
+        "ADESAO - ENTREGA STREAMING"
+    }
+    ts_norm_col = df_sub["Tipo de Serviço"].apply(limpar_texto) if "Tipo de Serviço" in df_sub.columns else pd.Series(dtype=str)
+    mask_nd = ts_norm_col.isin(servicos_nd_alvos) | (
+        ts_norm_col.str.contains("ADESAO", na=False) & 
+        (ts_norm_col.str.contains("ASSINATURA", na=False) | ts_norm_col.str.contains("STREAMING", na=False))
+    )
+    df_nd_base = df_sub[mask_nd] if not ts_norm_col.empty else pd.DataFrame()
+    
+    q_nd, nd_improd, den_nd = calc_taxa_quebra_direta(df_nd_base)
+    nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if not df_nd_base.empty and "Tipo de OS" in df_nd_base.columns else 0
+    nd_aberto = len(df_nd_base[df_nd_base["Tipo de OS"] == "EM ABERTO"]) if not df_nd_base.empty and "Tipo de OS" in df_nd_base.columns else 0
+    efic_nd = max(0.0, 1.0 - (nd_improd / den_nd)) if den_nd > 0 else 0.0
+    proj_nd = int(round(nd_prod + (nd_aberto * efic_nd), 0))
+
+    # GPON e MIGRAÇÃO
+    df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
+    df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
+    
+    df_gpon_serv = df_gpon[df_gpon["_quebra_padrao_"] == "SERVIÇOS"] if not df_gpon.empty else pd.DataFrame()
+    q_gpon, raw_q_gpon, raw_tot_gpon = calc_taxa_quebra_direta(df_gpon_serv if not df_gpon_serv.empty else df_gpon)
+    
+    df_mig_ins = df_mig[df_mig["_quebra_padrao_"] == "INSTALAÇÃO"] if not df_mig.empty else pd.DataFrame()
+    q_mig, raw_q_mig, raw_tot_mig = calc_taxa_quebra_direta(df_mig_ins if not df_mig_ins.empty else df_mig)
+    
+    # PME por CONTRATO (Contagem de WO únicas e não soma de O.S.)
+    pme_col = df_sub["PME"].fillna("").astype(str).str.strip().str.upper() if "PME" in df_sub.columns else pd.Series(dtype=str)
+    df_pme_os = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
+    df_pme_wo = filtrar_por_contrato_unico(df_pme_os)
+    
+    df_pme_wo_ins = df_pme_wo[df_pme_wo["_quebra_padrao_"] == "INSTALAÇÃO"] if not df_pme_wo.empty else pd.DataFrame()
+    q_pme, raw_q_pme_wo, raw_tot_pme_wo = calc_taxa_quebra_direta(df_pme_wo_ins if not df_pme_wo_ins.empty else df_pme_wo)
+    canc_pme_wo = len(df_pme_wo[df_pme_wo["CANCELADAS"] == "CANCELADO"]) if not df_pme_wo.empty and "CANCELADAS" in df_pme_wo.columns else 0
+
+    return {
+        "tot_os": tot_os, "os_aberta": aberta_count, "produtivo": prod_count,
+        "quebra_geral": improd_count, "pontos": pontos,
+        "efic": round(efic * 100, 1), "media_os": round(media_os, 2), "proj_dia": proj_dia,
+        "os_canc": os_canc, "saiu_toa": saiu_toa,
+        "q_ins": round(q_ins, 1), "q_serv": round(q_serv, 1),
+        "tot_nd": proj_nd, "q_nd": round(q_nd, 1),
+        "tot_gpon": len(df_gpon), "q_gpon": round(q_gpon, 1),
+        "tot_mig": len(df_mig), "q_mig": round(q_mig, 1),
+        "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_mig.columns else 0,
+        "retorno_wo": retorno_wo_count,
+        "tot_pme": len(df_pme_wo),
+        "q_pme": round(q_pme, 1),
+        "canc_pme": canc_pme_wo,
+        "_raw_q_ins": raw_q_ins, "_raw_tot_ins": raw_tot_ins,
+        "_raw_q_serv": raw_q_serv, "_raw_tot_serv": raw_tot_serv,
+        "_raw_q_nd": nd_improd, "_raw_tot_nd": den_nd,
+        "_raw_q_gpon": raw_q_gpon, "_raw_tot_gpon": raw_tot_gpon,
+        "_raw_q_mig": raw_q_mig, "_raw_tot_mig": raw_tot_mig,
+        "_raw_q_pme": raw_q_pme_wo, "_raw_tot_pme": raw_tot_pme_wo
+    }
 
 def calcular_calendario_automatico(ref_date=None):
     if ref_date is None:
@@ -834,7 +982,6 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                                     quebra_bruta = v_desc
                                     break
                         
-                        # Normaliza e aplica fallback automático se a aba DESC OS não tiver o serviço
                         df_aniel.at[idx, "QUEBRAS"] = padrao_quebra_categoria(quebra_bruta, tipo_servico_norm)
 
                         ts_lower = tipo_servico_norm.lower()
@@ -917,157 +1064,6 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
             on_click=ir_para_passo_2,
             key="btn_ir_dados"
         )
-
-# ==============================================================================
-# FUNÇÃO UNIFICADA DE CÁLCULO DE MÉTRICAS (USADA NO PASSO 2 E NO PASSO 3)
-# ==============================================================================
-def calcular_metricas_completas(df_sub_raw, montados, df_base_bruta=None):
-    """
-    Calcula todas as métricas de produtividade, quebras, ND, GPON, Migração,
-    Retorno WO (por contrato único) e PME (por contrato único).
-    """
-    if not isinstance(df_sub_raw, pd.DataFrame) or df_sub_raw.empty:
-        return {
-            "tot_os": 0, "os_aberta": 0, "produtivo": 0, "quebra_geral": 0, "pontos": 0,
-            "efic": 0.0, "media_os": 0.0, "proj_dia": 0, "os_canc": 0, "saiu_toa": 0,
-            "q_ins": 0.0, "q_serv": 0.0, "tot_nd": 0, "q_nd": 0.0, "tot_gpon": 0, "q_gpon": 0.0,
-            "tot_mig": 0, "q_mig": 0.0, "canc_mig": 0, "retorno_wo": 0, "tot_pme": 0, "q_pme": 0.0,
-            "canc_pme": 0, "_raw_q_ins": 0, "_raw_tot_ins": 0, "_raw_q_serv": 0, "_raw_tot_serv": 0,
-            "_raw_q_nd": 0, "_raw_tot_nd": 0, "_raw_q_gpon": 0, "_raw_tot_gpon": 0,
-            "_raw_q_mig": 0, "_raw_tot_mig": 0, "_raw_q_pme": 0, "_raw_tot_pme": 0
-        }
-
-    # Base de referência para Retorno WO (usa df_base_bruta se fornecida, senão df_sub_raw)
-    df_ref_ret = df_base_bruta if (df_base_bruta is not None and not df_base_bruta.empty) else df_sub_raw
-    mask_ret = pd.Series(False, index=df_ref_ret.index)
-    if "QUEBRAS" in df_ref_ret.columns:
-        mask_ret = mask_ret | (df_ref_ret["QUEBRAS"].apply(limpar_texto) == "RETORNO")
-    if "Tipo de Serviço" in df_ref_ret.columns:
-        mask_ret = mask_ret | (df_ref_ret["Tipo de Serviço"].apply(limpar_texto).str.contains("RETORNO", na=False))
-    df_ret_wo = filtrar_por_contrato_unico(df_ref_ret[mask_ret])
-    retorno_wo_count = len(df_ret_wo)
-
-    # Remove RETORNO DE CREDENCIADA para as métricas operacionais de O.S.
-    if "Tipo de Serviço" in df_sub_raw.columns:
-        df_sub = df_sub_raw[~eh_retorno_credenciada(df_sub_raw["Tipo de Serviço"])].copy()
-    else:
-        df_sub = df_sub_raw.copy()
-
-    # Garante que QUEBRAS tenha valor padronizado em todas as linhas
-    if "QUEBRAS" in df_sub.columns and "Tipo de Serviço" in df_sub.columns:
-        df_sub["_quebra_padrao_"] = [
-            padrao_quebra_categoria(q, ts) for q, ts in zip(df_sub["QUEBRAS"], df_sub["Tipo de Serviço"])
-        ]
-    else:
-        df_sub["_quebra_padrao_"] = ""
-
-    tot_os = len(df_sub)
-    df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-    df_improd = df_sub[df_sub["Tipo de OS"] == "IMPRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-    df_aberto = df_sub[df_sub["Tipo de OS"] == "EM ABERTO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-    df_canc = df_sub[df_sub["Tipo de OS"] == "CANCELADO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-    df_saiu = df_sub[df_sub["Tipo de OS"] == "SAIU DO TOA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-
-    prod_count = len(df_prod)
-    improd_count = len(df_improd)
-    aberta_count = len(df_aberto)
-    
-    den_quebra = improd_count + prod_count
-    quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
-    efic = max(0.0, 1.0 - quebra_pct)
-    
-    proj_os_exec = prod_count + (aberta_count * efic)
-    proj_dia = int(round(proj_os_exec, 0))
-    
-    pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
-    pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
-    pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
-    
-    den_pts = pontos_improd + pontos_prod
-    efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
-    pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
-    
-    media_os = (proj_dia / montados) if montados > 0 else 0.0
-    
-    os_canc = len(df_canc)
-    saiu_toa = len(df_saiu)
-
-    def calc_taxa_quebra_direta(df_grupo):
-        if df_grupo is None or df_grupo.empty or "Tipo de OS" not in df_grupo.columns:
-            return 0.0, 0, 0
-        i_c = len(df_grupo[df_grupo["Tipo de OS"] == "IMPRODUTIVA"])
-        p_c = len(df_grupo[df_grupo["Tipo de OS"] == "PRODUTIVA"])
-        d_c = i_c + p_c
-        taxa = (i_c / d_c * 100.0) if d_c > 0 else 0.0
-        return taxa, i_c, d_c
-
-    df_ins = df_sub[df_sub["_quebra_padrao_"] == "INSTALAÇÃO"]
-    df_serv = df_sub[df_sub["_quebra_padrao_"] == "SERVIÇOS"]
-    q_ins, raw_q_ins, raw_tot_ins = calc_taxa_quebra_direta(df_ins)
-    q_serv, raw_q_serv, raw_tot_serv = calc_taxa_quebra_direta(df_serv)
-    
-    # ND: Comparação sem acentos para nunca falhar com "ADESÃO" ou "INSTALAÇÃO"
-    servicos_nd_alvos = {
-        "ADESAO - INSTALACAO DE ASSINATURA",
-        "ADESAO - INSTALACAO DE ASSINATURA DIGITAL",
-        "ADESAO ENTREGA STREAMING",
-        "ADESAO - ENTREGA STREAMING"
-    }
-    ts_norm_col = df_sub["Tipo de Serviço"].apply(limpar_texto) if "Tipo de Serviço" in df_sub.columns else pd.Series(dtype=str)
-    mask_nd = ts_norm_col.isin(servicos_nd_alvos) | (
-        ts_norm_col.str.contains("ADESAO", na=False) & 
-        (ts_norm_col.str.contains("ASSINATURA", na=False) | ts_norm_col.str.contains("STREAMING", na=False))
-    )
-    df_nd_base = df_sub[mask_nd] if not ts_norm_col.empty else pd.DataFrame()
-    
-    q_nd, nd_improd, den_nd = calc_taxa_quebra_direta(df_nd_base)
-    nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if not df_nd_base.empty and "Tipo de OS" in df_nd_base.columns else 0
-    nd_aberto = len(df_nd_base[df_nd_base["Tipo de OS"] == "EM ABERTO"]) if not df_nd_base.empty and "Tipo de OS" in df_nd_base.columns else 0
-    efic_nd = max(0.0, 1.0 - (nd_improd / den_nd)) if den_nd > 0 else 0.0
-    proj_nd = int(round(nd_prod + (nd_aberto * efic_nd), 0))
-
-    # GPON e MIGRAÇÃO
-    df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
-    df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
-    
-    # Filtra SERVIÇOS no GPON (se houver), senão calcula sobre todo o GPON
-    df_gpon_serv = df_gpon[df_gpon["_quebra_padrao_"] == "SERVIÇOS"] if not df_gpon.empty else pd.DataFrame()
-    q_gpon, raw_q_gpon, raw_tot_gpon = calc_taxa_quebra_direta(df_gpon_serv if not df_gpon_serv.empty else df_gpon)
-    
-    # Filtra INSTALAÇÃO na Migração (se houver), senão calcula sobre toda a Migração
-    df_mig_ins = df_mig[df_mig["_quebra_padrao_"] == "INSTALAÇÃO"] if not df_mig.empty else pd.DataFrame()
-    q_mig, raw_q_mig, raw_tot_mig = calc_taxa_quebra_direta(df_mig_ins if not df_mig_ins.empty else df_mig)
-    
-    # PME por CONTRATO (Contagem de WO únicas e não soma de O.S.)
-    pme_col = df_sub["PME"].fillna("").astype(str).str.strip().str.upper() if "PME" in df_sub.columns else pd.Series(dtype=str)
-    df_pme_os = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
-    df_pme_wo = filtrar_por_contrato_unico(df_pme_os)
-    
-    df_pme_wo_ins = df_pme_wo[df_pme_wo["_quebra_padrao_"] == "INSTALAÇÃO"] if not df_pme_wo.empty else pd.DataFrame()
-    q_pme, raw_q_pme_wo, raw_tot_pme_wo = calc_taxa_quebra_direta(df_pme_wo_ins if not df_pme_wo_ins.empty else df_pme_wo)
-    canc_pme_wo = len(df_pme_wo[df_pme_wo["CANCELADAS"] == "CANCELADO"]) if not df_pme_wo.empty and "CANCELADAS" in df_pme_wo.columns else 0
-
-    return {
-        "tot_os": tot_os, "os_aberta": aberta_count, "produtivo": prod_count,
-        "quebra_geral": improd_count, "pontos": pontos,
-        "efic": round(efic * 100, 1), "media_os": round(media_os, 2), "proj_dia": proj_dia,
-        "os_canc": os_canc, "saiu_toa": saiu_toa,
-        "q_ins": round(q_ins, 1), "q_serv": round(q_serv, 1),
-        "tot_nd": proj_nd, "q_nd": round(q_nd, 1),
-        "tot_gpon": len(df_gpon), "q_gpon": round(q_gpon, 1),
-        "tot_mig": len(df_mig), "q_mig": round(q_mig, 1),
-        "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_mig.columns else 0,
-        "retorno_wo": retorno_wo_count,
-        "tot_pme": len(df_pme_wo),
-        "q_pme": round(q_pme, 1),
-        "canc_pme": canc_pme_wo,
-        "_raw_q_ins": raw_q_ins, "_raw_tot_ins": raw_tot_ins,
-        "_raw_q_serv": raw_q_serv, "_raw_tot_serv": raw_tot_serv,
-        "_raw_q_nd": nd_improd, "_raw_tot_nd": den_nd,
-        "_raw_q_gpon": raw_q_gpon, "_raw_tot_gpon": raw_tot_gpon,
-        "_raw_q_mig": raw_q_mig, "_raw_tot_mig": raw_tot_mig,
-        "_raw_q_pme": raw_q_pme_wo, "_raw_tot_pme": raw_tot_pme_wo
-    }
 
 # ==============================================================================
 # PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS
