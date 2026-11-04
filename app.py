@@ -1,6 +1,7 @@
 import io
 import re
 import calendar
+import unicodedata
 from datetime import datetime
 import pandas as pd
 import numpy as np
@@ -39,7 +40,7 @@ def fmt_br(val, decimais=0):
             s = s.replace(",", "X").replace(".", ",").replace("X", ".")
             return s
         else:
-            return f"{int(round(float(val), 0)):,}".replace(".", ".")
+            return f"{int(round(float(val), 0)):,}".replace(",", ".")
     except Exception:
         return str(val)
 
@@ -88,15 +89,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def normalizar_nome_base(val):
+# --- FUNÇÕES DE LIMPEZA E NORMALIZAÇÃO SEM ACENTOS ---
+def sem_acento(val):
+    if pd.isna(val):
+        return ""
     s = str(val).strip().upper()
-    if "ABC" in s:
-        return "NET-ABCDM"
-    elif "GUA" in s or "GRU" in s:
-        return "NET-Guarulhos"
-    elif "LES" in s:
-        return "NET-LESTE"
-    return s
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+    return re.sub(r"\s+", " ", s)
 
 def limpar_chave(val):
     if pd.isna(val):
@@ -107,15 +106,56 @@ def limpar_chave(val):
     return s
 
 def limpar_texto(val):
-    if pd.isna(val):
-        return ""
+    return sem_acento(val)
+
+def normalizar_tipo_os(val):
+    s = sem_acento(val)
+    if s in ["PRODUTIVA", "PRODUTIVO", "EXECUTADO", "CONCLUIDO", "CONCLUIDA"]:
+        return "PRODUTIVA"
+    if s in ["IMPRODUTIVA", "IMPRODUTIVO", "QUEBRA", "NAO CONCLUIDO", "NAO CONCLUIDA"]:
+        return "IMPRODUTIVA"
+    if "CANCELAD" in s:
+        return "CANCELADO"
+    if "SAIU DO TOA" in s:
+        return "SAIU DO TOA"
+    if "ABERTO" in s:
+        return "EM ABERTO"
+    return s
+
+def normalizar_quebra_cat(val):
+    s = sem_acento(val)
+    if "INSTALAC" in s or s == "INS":
+        return "INSTALAÇÃO"
+    if "SERVIC" in s or "MANUTENC" in s or "MUDANC" in s or s == "SERV":
+        return "SERVIÇOS"
+    if "RETORN" in s:
+        return "RETORNO"
+    return s
+
+def classificar_quebra_fallback(tipo_servico_norm):
+    s = sem_acento(tipo_servico_norm)
+    if "RETORN" in s:
+        return "RETORNO"
+    if any(k in s for k in ["ADESAO", "INSTALACAO", "PONTO ADICIONAL", "NOVO PONTO", "CONSTRUCAO", "MIGRACAO"]):
+        return "INSTALAÇÃO"
+    if s != "":
+        return "SERVIÇOS"
+    return ""
+
+def normalizar_nome_base(val):
     s = str(val).strip().upper()
-    return re.sub(r"\s+", " ", s)
+    if "ABC" in s:
+        return "NET-ABCDM"
+    elif "GUA" in s or "GRU" in s:
+        return "NET-Guarulhos"
+    elif "LES" in s:
+        return "NET-LESTE"
+    return s
 
 def obter_coluna_contrato(df):
     if df is None or df.empty:
         return None
-    return next((c for c in df.columns if "contrato" in c.lower()), None)
+    return next((c for c in df.columns if "contrato" in sem_acento(c).lower()), None)
 
 def filtrar_por_contrato_unico(df):
     """Garante contagem por Contrato (WO) único e não soma de O.S."""
@@ -277,22 +317,50 @@ def carregar_config_equipe():
     except Exception:
         return pd.DataFrame(columns=["Base", "Supervisor", "Montados", "Parados"])
 
+def ler_aba_flexivel(conn, nomes_possiveis):
+    for nome in nomes_possiveis:
+        try:
+            df = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet=nome)
+            if df is not None and not df.empty:
+                return df
+        except Exception:
+            pass
+    return pd.DataFrame()
+
 @st.cache_data(ttl=600)
 def carregar_dicionarios_sheets():
+    baixas_dict, pontos_dict, desc_dict = {}, {}, {}
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
-        df_b = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Baixas")
-        baixas_dict = dict(zip(df_b.iloc[:, 0].astype(str).str.strip().str.upper(), df_b.iloc[:, 1].astype(str).str.strip().str.upper()))
         
-        df_p = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Pontos")
-        pontos_dict = dict(zip(df_p.iloc[:, 0].astype(str).str.strip().str.upper(), pd.to_numeric(df_p.iloc[:, 1], errors="coerce").fillna(0.0)))
+        df_b = ler_aba_flexivel(conn, ["Baixas", "BAIXAS", "baixas"])
+        if not df_b.empty:
+            baixas_dict = dict(zip(
+                df_b.iloc[:, 0].apply(sem_acento),
+                df_b.iloc[:, 1].apply(normalizar_tipo_os)
+            ))
         
-        df_d = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Desc_OS")
-        desc_dict = dict(zip(df_d.iloc[:, 0].astype(str).str.strip().str.upper(), df_d.iloc[:, 1].astype(str).str.strip().str.upper()))
+        df_p = ler_aba_flexivel(conn, ["Pontos", "PONTOS ANIEL", "PONTOS", "Pontos_Aniel"])
+        if not df_p.empty:
+            vals_p = (
+                df_p.iloc[:, 1].astype(str)
+                .str.replace(" ", "", regex=False)
+                .str.replace(",", ".", regex=False)
+            )
+            pontos_dict = dict(zip(
+                df_p.iloc[:, 0].apply(sem_acento),
+                pd.to_numeric(vals_p, errors="coerce").fillna(0.0)
+            ))
         
-        return baixas_dict, pontos_dict, desc_dict
+        df_d = ler_aba_flexivel(conn, ["Desc_OS", "DESC OS", "DESC_OS", "Desc OS"])
+        if not df_d.empty:
+            desc_dict = dict(zip(
+                df_d.iloc[:, 0].apply(sem_acento),
+                df_d.iloc[:, 1].apply(normalizar_quebra_cat)
+            ))
     except Exception:
-        return {}, {}, {}
+        pass
+    return baixas_dict, pontos_dict, desc_dict
 
 BAIXAS_DICT, PONTOS_DICT, DESC_OS_DICT = carregar_dicionarios_sheets()
 
@@ -322,7 +390,7 @@ def processar_arquivo_msg(up_msg):
          utf16_str = raw_bytes.decode("utf-16le", errors="ignore")
          texto_completo += "\n" + latin_str + "\n" + utf16_str
 
-    texto_up = texto_completo.upper()
+    texto_up = sem_acento(texto_completo)
     
     match_data = re.search(r'\b(\d{2}/\d{2}/202\d)\b', texto_up)
     data_ext = match_data.group(1) if match_data else None
@@ -345,7 +413,7 @@ def processar_arquivo_msg(up_msg):
     tecnicos_extraidos = []
 
     padrao_linha = re.compile(
-        r'(\d{4,6}\s*-\s*[A-ZÀ-Ú\s]{4,45}?)\s+(MAICON[A-Z\s]*|NELSON[A-Z\s]*|EDSON[A-Z\s]*|ADRIANO[A-Z\s]*|DANIELE[A-Z\s]*|FERNANDO[A-Z\s]*|PALOMA[A-Z\s]*|ALAN[A-Z\s]*|ELISANGELA[A-Z\s]*|FRANCISC?O[A-Z\s]*|JOAO CARLOS[A-Z\s]*)\s+(FALTA|FOLGA|ATESTADO|FERIAS|SUSPENSAO|TREINAMENTO|SINISTRO|OFICINA|MANUTENCAO)',
+        r'(\d{4,6}\s*-\s*[A-Z\s]{4,45}?)\s+(MAICON[A-Z\s]*|NELSON[A-Z\s]*|EDSON[A-Z\s]*|ADRIANO[A-Z\s]*|DANIELE[A-Z\s]*|FERNANDO[A-Z\s]*|PALOMA[A-Z\s]*|ALAN[A-Z\s]*|ELISANGELA[A-Z\s]*|FRANCISC?O[A-Z\s]*|JOAO CARLOS[A-Z\s]*)\s+(FALTA|FOLGA|ATESTADO|FERIAS|SUSPENSAO|TREINAMENTO|SINISTRO|OFICINA|MANUTENCAO)',
         re.IGNORECASE
     )
     matches = padrao_linha.findall(texto_up)
@@ -360,15 +428,15 @@ def processar_arquivo_msg(up_msg):
                     tecnicos_extraidos.append(f"{cond_limpo} ({chave_sup}) - {mot_limpo}")
                     break
     else:
-        for linha in texto_up.split('\n'):
-            linha_clean = re.sub(r'\s+', ' ', linha).strip()
+        for linha in texto_completo.upper().split('\n'):
+            linha_clean = sem_acento(linha)
             if not linha_clean or "SMTP:" in linha_clean or "@" in linha_clean:
                 continue
             for chave_sup, aliases in mapa_aliases.items():
                 aliases_longos = [a for a in aliases if " " in a]
                 if any(al in linha_clean for al in aliases_longos):
                     parados_por_sup[chave_sup] += 1
-                    m_tec = re.search(r'(\d{4,6}\s*-\s*[A-ZÀ-Ú\s]{4,35})', linha_clean)
+                    m_tec = re.search(r'(\d{4,6}\s*-\s*[A-Z\s]{4,35})', linha_clean)
                     if m_tec:
                         tecnicos_extraidos.append(f"{m_tec.group(1).strip()} ({chave_sup})")
                     else:
@@ -382,16 +450,16 @@ def processar_planilha_consultivo(df_cons, df_aniel, data_ref_str):
     df_cons = df_cons.copy()
     df_cons.columns = [str(c).strip() for c in df_cons.columns]
     
-    col_obs = next((c for c in df_cons.columns if "observacao" in c.lower() or "obs" in c.lower()), df_cons.columns[0])
-    col_c_projeto = next((c for c in df_cons.columns if any(k in c.lower() for k in ["projeto", "base", "regional", "un", "area", "cidade"])), None)
-    col_c_data = next((c for c in df_cons.columns if any(k in c.lower() for k in ["data", "dt", "criacao", "abertura", "dia", "agendamento"])), None)
+    col_obs = next((c for c in df_cons.columns if "obs" in sem_acento(c).lower()), df_cons.columns[0])
+    col_c_projeto = next((c for c in df_cons.columns if any(k in sem_acento(c).lower() for k in ["projeto", "base", "regional", "un", "area", "cidade"])), None)
+    col_c_data = next((c for c in df_cons.columns if any(k in sem_acento(c).lower() for k in ["data", "dt", "criacao", "abertura", "dia", "agendamento"])), None)
 
     mapa_os_base = {}
     if df_aniel is not None and not df_aniel.empty:
-        col_proj_a = next((c for c in df_aniel.columns if c.lower() == "projeto"), None)
+        col_proj_a = next((c for c in df_aniel.columns if sem_acento(c).lower() == "projeto"), None)
         if col_proj_a:
             for c_cand in df_aniel.columns:
-                if any(k in c_cand.lower() for k in ["contrato", "os", "ordem", "numero"]):
+                if any(k in sem_acento(c_cand).lower() for k in ["contrato", "os", "ordem", "numero"]):
                     for _, r_a in df_aniel[[c_cand, col_proj_a]].dropna().iterrows():
                         ch = limpar_chave(r_a[c_cand])
                         if len(ch) >= 7:
@@ -616,13 +684,13 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
 
     if up_aniel is not None:
         if st.button("🚀 Processar Arquivos e Cruzar Bases", type="primary"):
-            with st.spinner("Validando datas, processando cruzamento e aplicando regra do Consultivo..."):
+            with st.spinner("Validando datas, processando cruzamento e aplicando regras de baixa e quebras..."):
                 try:
                     df_aniel = ler_arquivo_seguro(up_aniel)
                     df_aniel.columns = [str(c).strip() for c in df_aniel.columns]
 
                     data_aniel_str = ""
-                    col_data_aniel = next((c for c in df_aniel.columns if "data" in c.lower() or "agendamento" in c.lower()), None)
+                    col_data_aniel = next((c for c in df_aniel.columns if "data" in sem_acento(c).lower() or "agendamento" in sem_acento(c).lower()), None)
                     if col_data_aniel:
                         datas_a = pd.to_datetime(df_aniel[col_data_aniel], dayfirst=True, errors='coerce').dropna()
                         if not datas_a.empty:
@@ -633,7 +701,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                     elif "email_data_ext" in st.session_state:
                         st.session_state["data_formatada_ativa"] = st.session_state["email_data_ext"]
 
-                    col_proj = next((c for c in df_aniel.columns if c.lower() == "projeto"), "Projeto")
+                    col_proj = next((c for c in df_aniel.columns if sem_acento(c).lower() == "projeto"), "Projeto")
                     if col_proj in df_aniel.columns:
                         df_aniel = df_aniel[
                             ~df_aniel[col_proj].astype(str).str.upper().str.contains(r"\bVT\b|VT", regex=True, na=False)
@@ -642,11 +710,6 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                     df_toa = None
                     data_toa_str = ""
                     if up_toa:
-                        colunas_uteis_toa = [
-                            "Data", "Contrato", "Status da Atividade", "Motivo de Fechamento Externo",
-                            "Cidade", "Início", "Categorias da Capacidade", "Cód de Baixa 1",
-                            "Tipo O.S 1", "Total de tarefas"
-                        ]
                         toa_dfs = []
                         for file in up_toa:
                             tdf = ler_arquivo_seguro(file)
@@ -655,9 +718,6 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                                 datas_t = pd.to_datetime(tdf["Data"], dayfirst=True, errors='coerce').dropna()
                                 if not datas_t.empty and not data_toa_str:
                                     data_toa_str = datas_t.iloc[0].strftime("%d/%m/%Y")
-                            cols_presentes = [c for c in colunas_uteis_toa if c in tdf.columns]
-                            if cols_presentes:
-                                tdf = tdf[cols_presentes]
                             toa_dfs.append(tdf)
                         df_toa = pd.concat(toa_dfs, ignore_index=True)
 
@@ -679,62 +739,77 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                             df_aniel[col] = ""
 
                     if df_toa is not None and not df_toa.empty:
-                        col_chave_toa = "Contrato" if "Contrato" in df_toa.columns else df_toa.columns[1]
+                        col_chave_toa = next((c for c in df_toa.columns if "contrato" in sem_acento(c).lower()), df_toa.columns[1])
+                        col_st1_toa = next((c for c in df_toa.columns if "status da atividade" in sem_acento(c).lower() or "status" in sem_acento(c).lower()), None)
+                        col_st2_toa = next((c for c in df_toa.columns if "motivo de fechamento" in sem_acento(c).lower() or "motivo" in sem_acento(c).lower()), None)
+                        col_st3_toa = next((c for c in df_toa.columns if "cod de baixa" in sem_acento(c).lower() or "baixa" in sem_acento(c).lower()), None)
+                        col_pme_toa = next((c for c in df_toa.columns if "categorias da capacidade" in sem_acento(c).lower() or "capacidade" in sem_acento(c).lower()), None)
+                        col_cid_toa = next((c for c in df_toa.columns if "cidade" in sem_acento(c).lower()), None)
+
                         df_toa_clean = df_toa.copy()
                         df_toa_clean["_chave_"] = df_toa_clean[col_chave_toa].apply(limpar_chave).astype(str)
                         df_toa_clean = df_toa_clean[df_toa_clean["_chave_"] != ""]
                         df_toa_clean = df_toa_clean.drop_duplicates(subset=["_chave_"], keep="first")
                         toa_dict = df_toa_clean.set_index("_chave_").to_dict(orient="index")
 
-                        col_chave_aniel = next((c for c in df_aniel.columns if "contrato" in c.lower()), "Contrato Cliente")
+                        col_chave_aniel = next((c for c in df_aniel.columns if "contrato" in sem_acento(c).lower()), "Contrato Cliente")
 
                         for idx, row in df_aniel.iterrows():
                             contrato = limpar_chave(row.get(col_chave_aniel, ""))
                             if contrato in toa_dict:
                                 match = toa_dict[contrato]
-                                df_aniel.at[idx, "ST1"] = str(match.get("Status da Atividade", "")).replace("nan", "").strip()
-                                df_aniel.at[idx, "ST2"] = str(match.get("Motivo de Fechamento Externo", "")).replace("nan", "").strip()
-                                df_aniel.at[idx, "ST3"] = str(match.get("Cód de Baixa 1", "")).replace("nan", "").strip()
-                                df_aniel.at[idx, "PME"] = str(match.get("Categorias da Capacidade", "")).replace("nan", "").strip()
-                                df_aniel.at[idx, "Cidade"] = str(match.get("Cidade", "")).replace("nan", "").strip()
+                                if col_st1_toa:
+                                    df_aniel.at[idx, "ST1"] = str(match.get(col_st1_toa, "")).replace("nan", "").strip()
+                                if col_st2_toa:
+                                    df_aniel.at[idx, "ST2"] = str(match.get(col_st2_toa, "")).replace("nan", "").strip()
+                                if col_st3_toa:
+                                    df_aniel.at[idx, "ST3"] = str(match.get(col_st3_toa, "")).replace("nan", "").strip()
+                                if col_pme_toa:
+                                    df_aniel.at[idx, "PME"] = str(match.get(col_pme_toa, "")).replace("nan", "").strip()
+                                if col_cid_toa:
+                                    df_aniel.at[idx, "Cidade"] = str(match.get(col_cid_toa, "")).replace("nan", "").strip()
 
                     if "Projeto" in df_aniel.columns and "Cidade" in df_aniel.columns and "Supervisor" in df_aniel.columns:
                         mask_apoio = (
                             (df_aniel["Projeto"].astype(str).str.upper().str.contains("ABCDM")) &
-                            (df_aniel["Cidade"].astype(str).str.upper().str.strip() == "SAO PAULO")
+                            (df_aniel["Cidade"].apply(sem_acento) == "SAO PAULO")
                         )
                         df_aniel.loc[mask_apoio, "Supervisor"] = "APOIO SÃO PAULO"
 
-                    if "Pontos Prev." not in df_aniel.columns:
+                    col_pts_aniel = next((c for c in df_aniel.columns if "pontos" in sem_acento(c).lower()), "Pontos Prev.")
+                    if col_pts_aniel not in df_aniel.columns:
                         df_aniel["Pontos Prev."] = 0.0
                     else:
                         df_aniel["Pontos Prev."] = (
-                            df_aniel["Pontos Prev."]
+                            df_aniel[col_pts_aniel]
                             .astype(str)
                             .str.replace(" ", "", regex=False)
-                            .str.replace(".", "", regex=False)
                             .str.replace(",", ".", regex=False)
                         )
                         df_aniel["Pontos Prev."] = pd.to_numeric(df_aniel["Pontos Prev."], errors="coerce").fillna(0.0)
 
-                    baixas_norm = {limpar_texto(k): v for k, v in BAIXAS_DICT.items()}
-                    desc_norm = {limpar_texto(k): v for k, v in DESC_OS_DICT.items()}
-                    pontos_norm = {limpar_texto(k): float(v) for k, v in PONTOS_DICT.items()}
+                    baixas_norm = {sem_acento(k): normalizar_tipo_os(v) for k, v in BAIXAS_DICT.items()}
+                    desc_norm = {sem_acento(k): normalizar_quebra_cat(v) for k, v in DESC_OS_DICT.items()}
+                    pontos_norm = {sem_acento(k): float(v) for k, v in PONTOS_DICT.items()}
+
+                    col_ts_aniel = next((c for c in df_aniel.columns if "tipo de servico" in sem_acento(c).lower()), "Tipo de Serviço")
+                    col_to_aniel = next((c for c in df_aniel.columns if "tipo de os" in sem_acento(c).lower()), "Tipo de OS")
+                    col_obs1_aniel = next((c for c in df_aniel.columns if "observacao 1" in sem_acento(c).lower() or "observacao" in sem_acento(c).lower()), "Observação 1")
 
                     for idx, row in df_aniel.iterrows():
-                        tipo_os_raw = str(row.get("Tipo de OS", "")).strip()
-                        tipo_os = "" if tipo_os_raw.lower() == "nan" else tipo_os_raw.upper()
+                        tipo_os_raw = str(row.get(col_to_aniel, "")).strip()
+                        tipo_os = "" if tipo_os_raw.lower() == "nan" else normalizar_tipo_os(tipo_os_raw)
 
                         st1_raw = str(row.get("ST1", "")).strip()
                         st1_val = "" if st1_raw.lower() == "nan" else st1_raw
 
                         st2_raw = str(row.get("ST2", "")).strip()
-                        st2_val = "" if st2_raw.lower() == "nan" else st2_raw.lower()
+                        st2_val = "" if st2_raw.lower() == "nan" else sem_acento(st2_raw).lower()
 
                         st3_raw = str(row.get("ST3", "")).strip()
-                        st3_val = "" if st3_raw.lower() == "nan" else st3_raw.upper()
-                        st3_norm = limpar_texto(st3_val)
+                        st3_norm = "" if st3_raw.lower() == "nan" else sem_acento(st3_raw)
 
+                        # 1. Se tiver baixa no ST3, faz PROCV na aba BAIXAS prioritariamente (ou classifica pelo código/texto)
                         encontrou = False
                         if st3_norm != "":
                             if st3_norm in baixas_norm:
@@ -742,10 +817,19 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                                 encontrou = True
                             else:
                                 for k_baixa, v_baixa in baixas_norm.items():
-                                    if st3_norm in k_baixa or k_baixa in st3_norm:
+                                    if k_baixa != "" and (st3_norm in k_baixa or k_baixa in st3_norm):
                                         tipo_os = v_baixa
                                         encontrou = True
                                         break
+                            # Fallback caso a aba BAIXAS não tenha o código exato mas o texto do ST3 indique conclusão ou improdutiva
+                            if not encontrou:
+                                if "SERVICO CONCLUIDO" in st3_norm or st3_norm.startswith("409"):
+                                    tipo_os = "PRODUTIVA"
+                                    encontrou = True
+                                else:
+                                    tipo_os = "IMPRODUTIVA"
+                                    encontrou = True
+
                         if not encontrou and tipo_os in ["N/A", "#N/A", "", "SAIU DO TOA"]:
                             tipo_os = "EM ABERTO"
 
@@ -758,29 +842,29 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                         if "executado no sistema netsms" in st2_val:
                             tipo_os = "PRODUTIVA"
 
-                        df_aniel.at[idx, "Tipo de OS"] = tipo_os
+                        df_aniel.at[idx, "Tipo de OS"] = normalizar_tipo_os(tipo_os)
 
                         if "cancelado" in st2_val:
                             df_aniel.at[idx, "CANCELADAS"] = "CANCELADO"
                         else:
                             df_aniel.at[idx, "CANCELADAS"] = ""
 
-                        tipo_servico_raw = str(row.get("Tipo de Serviço", "")).strip()
-                        tipo_servico_norm = limpar_texto(tipo_servico_raw)
-                        obs1_raw = str(row.get("Observação 1", "")).strip()
-                        obs1 = "" if obs1_raw.lower() == "nan" else obs1_raw.lower()
+                        tipo_servico_raw = str(row.get(col_ts_aniel, "")).strip()
+                        tipo_servico_norm = sem_acento(tipo_servico_raw)
+                        obs1_raw = str(row.get(col_obs1_aniel, "")).strip()
+                        obs1 = "" if obs1_raw.lower() == "nan" else sem_acento(obs1_raw).lower()
 
                         quebra_val = ""
                         if tipo_servico_norm in desc_norm:
                             quebra_val = desc_norm[tipo_servico_norm]
                         else:
                             for k_desc, v_desc in desc_norm.items():
-                                if tipo_servico_norm != "" and (tipo_servico_norm in k_desc or k_desc in tipo_servico_norm):
+                                if tipo_servico_norm != "" and k_desc != "" and (tipo_servico_norm in k_desc or k_desc in tipo_servico_norm):
                                     quebra_val = v_desc
                                     break
-                        if quebra_val == "" and "RETORNO" in tipo_servico_norm:
-                            quebra_val = "RETORNO"
-                        df_aniel.at[idx, "QUEBRAS"] = quebra_val
+                        if quebra_val == "":
+                            quebra_val = classificar_quebra_fallback(tipo_servico_norm)
+                        df_aniel.at[idx, "QUEBRAS"] = normalizar_quebra_cat(quebra_val)
 
                         ts_lower = tipo_servico_norm.lower()
                         status_ativ = ""
@@ -806,14 +890,14 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                                 ponto_encontrado = pontos_norm[tipo_servico_norm]
                             else:
                                 for k_ponto, v_ponto in pontos_norm.items():
-                                    if tipo_servico_norm != "" and (tipo_servico_norm in k_ponto or k_ponto in tipo_servico_norm):
+                                    if tipo_servico_norm != "" and k_ponto != "" and (tipo_servico_norm in k_ponto or k_ponto in tipo_servico_norm):
                                         ponto_encontrado = v_ponto
                                         break
                             if ponto_encontrado is not None:
                                 df_aniel.at[idx, "Pontos Prev."] = float(ponto_encontrado)
 
                     df_aniel["Supervisor"] = df_aniel["Supervisor"].fillna("").astype(str).str.strip().str.upper()
-                    df_aniel["Tipo de Serviço"] = df_aniel["Tipo de Serviço"].fillna("").astype(str).str.strip().str.upper()
+                    df_aniel["Tipo de Serviço"] = df_aniel[col_ts_aniel].fillna("").astype(str).str.strip().str.upper()
 
                     df_valido = df_aniel[
                         (df_aniel["Supervisor"] != "") &
@@ -832,18 +916,18 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                         
                         sups_filtrados = []
                         for s in sups_brutos:
-                            s_up = str(s).strip().upper()
+                            s_up = sem_acento(s)
                             if "ABCDM" in b_proj.upper():
                                 if any(sub in s_up for sub in ["EDSON", "MAICON", "NELSON", "APOIO"]):
-                                    sups_filtrados.append(s_up)
+                                    sups_filtrados.append(str(s).strip().upper())
                             elif "LESTE" in b_proj.upper():
                                 if any(sub in s_up for sub in ["ALAN", "ELISANGELA", "FRANCISCO", "JOAO CARLOS", "MIRON"]):
-                                    sups_filtrados.append(s_up)
+                                    sups_filtrados.append(str(s).strip().upper())
                             elif "GUARULHOS" in b_proj.upper():
                                 if any(sub in s_up for sub in ["ADRIANO", "DANIELE", "FERNANDO", "PALOMA"]):
-                                    sups_filtrados.append(s_up)
+                                    sups_filtrados.append(str(s).strip().upper())
                             else:
-                                sups_filtrados.append(s_up)
+                                sups_filtrados.append(str(s).strip().upper())
                                 
                         sup_map[b_proj] = sorted(list(set(sups_filtrados)))
 
@@ -862,6 +946,144 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
             on_click=ir_para_passo_2,
             key="btn_ir_dados"
         )
+
+# ==============================================================================
+# FUNÇÃO CENTRAL DE CÁLCULO DE MÉTRICAS (USADA NO PASSO 2 E NO PASSO 3)
+# ==============================================================================
+def calcular_metricas_completas(df_sub_raw, montados):
+    if not isinstance(df_sub_raw, pd.DataFrame) or df_sub_raw.empty:
+        return {
+            "tot_os": 0, "os_aberta": 0, "produtivo": 0, "quebra_geral": 0, "pontos": 0,
+            "efic": 0.0, "media_os": 0.0, "proj_dia": 0, "os_canc": 0, "saiu_toa": 0,
+            "q_ins": 0.0, "q_serv": 0.0, "tot_nd": 0, "q_nd": 0.0, "tot_gpon": 0, "q_gpon": 0.0,
+            "tot_mig": 0, "q_mig": 0.0, "canc_mig": 0, "retorno_wo": 0, "tot_pme": 0, "q_pme": 0.0,
+            "canc_pme": 0, "_raw_q_ins": 0, "_raw_tot_ins": 0, "_raw_q_serv": 0, "_raw_tot_serv": 0,
+            "_raw_q_nd": 0, "_raw_tot_nd": 0, "_raw_q_gpon": 0, "_raw_tot_gpon": 0,
+            "_raw_q_mig": 0, "_raw_tot_mig": 0, "_raw_q_pme": 0, "_raw_tot_pme": 0
+        }
+
+    # 1. RETORNO WO: extraído ANTES de remover RETORNO DE CREDENCIADA, contando por Contrato (WO)
+    q_series_all = df_sub_raw["QUEBRAS"].apply(normalizar_quebra_cat) if "QUEBRAS" in df_sub_raw.columns else pd.Series("", index=df_sub_raw.index)
+    ts_series_all = df_sub_raw["Tipo de Serviço"].apply(sem_acento) if "Tipo de Serviço" in df_sub_raw.columns else pd.Series("", index=df_sub_raw.index)
+    mask_ret = (q_series_all == "RETORNO") | (ts_series_all.str.contains("RETORNO", na=False))
+    df_ret_wo = filtrar_por_contrato_unico(df_sub_raw[mask_ret])
+    retorno_wo_count = len(df_ret_wo)
+
+    # 2. Filtra df_sub sem RETORNO DE CREDENCIADA para métricas de O.S.
+    df_sub = df_sub_raw[~ts_series_all.str.contains("RETORNO DE CREDENCIADA", na=False)].copy()
+    if df_sub.empty:
+        return {
+            "tot_os": 0, "os_aberta": 0, "produtivo": 0, "quebra_geral": 0, "pontos": 0,
+            "efic": 0.0, "media_os": 0.0, "proj_dia": 0, "os_canc": 0, "saiu_toa": 0,
+            "q_ins": 0.0, "q_serv": 0.0, "tot_nd": 0, "q_nd": 0.0, "tot_gpon": 0, "q_gpon": 0.0,
+            "tot_mig": 0, "q_mig": 0.0, "canc_mig": 0, "retorno_wo": retorno_wo_count, "tot_pme": 0, "q_pme": 0.0,
+            "canc_pme": 0, "_raw_q_ins": 0, "_raw_tot_ins": 0, "_raw_q_serv": 0, "_raw_tot_serv": 0,
+            "_raw_q_nd": 0, "_raw_tot_nd": 0, "_raw_q_gpon": 0, "_raw_tot_gpon": 0,
+            "_raw_q_mig": 0, "_raw_tot_mig": 0, "_raw_q_pme": 0, "_raw_tot_pme": 0
+        }
+
+    df_sub["_tipo_os_norm_"] = df_sub["Tipo de OS"].apply(normalizar_tipo_os)
+    df_sub["_quebras_norm_"] = df_sub["QUEBRAS"].apply(normalizar_quebra_cat)
+    df_sub["_ts_norm_"] = df_sub["Tipo de Serviço"].apply(sem_acento)
+
+    tot_os = len(df_sub)
+    df_prod = df_sub[df_sub["_tipo_os_norm_"] == "PRODUTIVA"]
+    df_improd = df_sub[df_sub["_tipo_os_norm_"] == "IMPRODUTIVA"]
+    df_aberto = df_sub[df_sub["_tipo_os_norm_"] == "EM ABERTO"]
+    df_canc = df_sub[df_sub["_tipo_os_norm_"] == "CANCELADO"]
+    df_saiu = df_sub[df_sub["_tipo_os_norm_"] == "SAIU DO TOA"]
+
+    prod_count = len(df_prod)
+    improd_count = len(df_improd)
+    aberta_count = len(df_aberto)
+    
+    den_quebra = improd_count + prod_count
+    quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
+    efic = max(0.0, 1.0 - quebra_pct)
+    
+    proj_os_exec = prod_count + (aberta_count * efic)
+    proj_dia = int(round(proj_os_exec, 0))
+    
+    pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
+    pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
+    pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
+    
+    den_pts = pontos_improd + pontos_prod
+    efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
+    pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
+    
+    media_os = (proj_dia / montados) if montados > 0 else 0.0
+    
+    os_canc = len(df_canc)
+    saiu_toa = len(df_saiu)
+
+    def calc_quebra_bloco(df_item, filtro_quebra=None):
+        if df_item is None or df_item.empty:
+            return 0.0, 0, 0
+        df_cat = df_item[df_item["_quebras_norm_"] == filtro_quebra] if filtro_quebra else df_item
+        if df_cat.empty and filtro_quebra:
+            # Caso o subconjunto (ex: GPON, Migração, ND, PME) não tenha match de QUEBRAS, calcula sobre todas as produtivas/improdutivas do subconjunto
+            df_cat = df_item
+        i_c = len(df_cat[df_cat["_tipo_os_norm_"] == "IMPRODUTIVA"])
+        p_c = len(df_cat[df_cat["_tipo_os_norm_"] == "PRODUTIVA"])
+        d_c = i_c + p_c
+        pct = (i_c / d_c * 100.0) if d_c > 0 else 0.0
+        return pct, i_c, d_c
+
+    q_ins_pct, raw_q_ins, raw_tot_ins = calc_quebra_bloco(df_sub[df_sub["_quebras_norm_"] == "INSTALAÇÃO"])
+    q_serv_pct, raw_q_serv, raw_tot_serv = calc_quebra_bloco(df_sub[df_sub["_quebras_norm_"] == "SERVIÇOS"])
+
+    # ND (Comparação sem acentos para capturar ADESÃO - INSTALAÇÃO DE ASSINATURA)
+    servicos_nd_alvos = [
+        "ADESAO - INSTALACAO DE ASSINATURA",
+        "ADESAO - INSTALACAO DE ASSINATURA DIGITAL",
+        "ADESAO ENTREGA STREAMING"
+    ]
+    df_nd_base = df_sub[df_sub["_ts_norm_"].isin(servicos_nd_alvos)]
+    nd_prod = len(df_nd_base[df_nd_base["_tipo_os_norm_"] == "PRODUTIVA"])
+    nd_improd = len(df_nd_base[df_nd_base["_tipo_os_norm_"] == "IMPRODUTIVA"])
+    nd_aberto = len(df_nd_base[df_nd_base["_tipo_os_norm_"] == "EM ABERTO"])
+    den_nd = nd_improd + nd_prod
+    efic_nd = max(0.0, 1.0 - (nd_improd / den_nd)) if den_nd > 0 else 0.0
+    proj_nd = int(round(nd_prod + (nd_aberto * efic_nd), 0))
+    q_nd_pct, raw_q_nd, raw_tot_nd = calc_quebra_bloco(df_nd_base, "INSTALAÇÃO")
+
+    # GPON e MIGRAÇÃO
+    df_gpon = df_sub[df_sub["ATIVIDADES"].apply(sem_acento) == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
+    q_gpon_pct, raw_q_gpon, raw_tot_gpon = calc_quebra_bloco(df_gpon, "SERVIÇOS")
+
+    df_mig = df_sub[df_sub["ATIVIDADES"].apply(sem_acento) == "MIGRACAO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
+    q_mig_pct, raw_q_mig, raw_tot_mig = calc_quebra_bloco(df_mig, "INSTALAÇÃO")
+    canc_mig = len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]) if not df_mig.empty and "CANCELADAS" in df_mig.columns else 0
+
+    # PME por CONTRATO (Contagem de WO únicas e não soma de O.S.)
+    pme_col = df_sub["PME"].fillna("").astype(str).str.strip().str.upper() if "PME" in df_sub.columns else pd.Series("", index=df_sub.index)
+    df_pme_os = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))]
+    df_pme_wo = filtrar_por_contrato_unico(df_pme_os)
+    q_pme_pct, raw_q_pme, raw_tot_pme = calc_quebra_bloco(df_pme_wo, "INSTALAÇÃO")
+    canc_pme = len(df_pme_wo[df_pme_wo["CANCELADAS"] == "CANCELADO"]) if not df_pme_wo.empty and "CANCELADAS" in df_pme_wo.columns else 0
+
+    return {
+        "tot_os": tot_os, "os_aberta": aberta_count, "produtivo": prod_count,
+        "quebra_geral": improd_count, "pontos": pontos,
+        "efic": round(efic * 100, 1), "media_os": round(media_os, 2), "proj_dia": proj_dia,
+        "os_canc": os_canc, "saiu_toa": saiu_toa,
+        "q_ins": q_ins_pct, "q_serv": q_serv_pct,
+        "tot_nd": proj_nd, "q_nd": q_nd_pct,
+        "tot_gpon": len(df_gpon), "q_gpon": q_gpon_pct,
+        "tot_mig": len(df_mig), "q_mig": q_mig_pct,
+        "canc_mig": canc_mig,
+        "retorno_wo": retorno_wo_count,
+        "tot_pme": len(df_pme_wo),
+        "q_pme": q_pme_pct,
+        "canc_pme": canc_pme,
+        "_raw_q_ins": raw_q_ins, "_raw_tot_ins": raw_tot_ins,
+        "_raw_q_serv": raw_q_serv, "_raw_tot_serv": raw_tot_serv,
+        "_raw_q_nd": raw_q_nd, "_raw_tot_nd": raw_tot_nd,
+        "_raw_q_gpon": raw_q_gpon, "_raw_tot_gpon": raw_tot_gpon,
+        "_raw_q_mig": raw_q_mig, "_raw_tot_mig": raw_tot_mig,
+        "_raw_q_pme": raw_q_pme, "_raw_tot_pme": raw_tot_pme
+    }
 
 # ==============================================================================
 # PÁGINA 2: ENTRADA DE DADOS OPERACIONAIS
@@ -944,7 +1166,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         if email_parados_auto:
                             parados_email_val = 0
                             for k_sup, v_qtd in email_parados_auto.items():
-                                if k_sup in sup.upper():
+                                if k_sup in sem_acento(sup):
                                     parados_email_val = v_qtd
                                     break
                         
@@ -975,8 +1197,8 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=11800 if "ABCDM" in b_proj else 12200, step=100, key=f"inp_meta_os_{b_proj}")
                     df_b_temp = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()]
                     if "Tipo de Serviço" in df_b_temp.columns:
-                        df_b_temp = df_b_temp[~df_b_temp["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
-                    prod_hoje_temp = len(df_b_temp[df_b_temp["Tipo de OS"] == "PRODUTIVA"])
+                        df_b_temp = df_b_temp[~df_b_temp["Tipo de Serviço"].apply(sem_acento).str.contains("RETORNO DE CREDENCIADA", na=False)]
+                    prod_hoje_temp = len(df_b_temp[df_b_temp["Tipo de OS"].apply(normalizar_tipo_os) == "PRODUTIVA"])
                     proj_os_val, _, _ = calcular_projecao_os_base(b_proj, dias_uteis_auto, prod_hoje_temp, data_formatada)
                     st.markdown(f"**Projeção de O.S. (Mês):**\n### {fmt_br(proj_os_val)}")
 
@@ -1023,8 +1245,8 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     b_label = item["label"]
                     df_b = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()]
                     if "Tipo de Serviço" in df_b.columns:
-                        df_b = df_b[~df_b["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)]
-                    prod_hoje = len(df_b[df_b["Tipo de OS"] == "PRODUTIVA"])
+                        df_b = df_b[~df_b["Tipo de Serviço"].apply(sem_acento).str.contains("RETORNO DE CREDENCIADA", na=False)]
+                    prod_hoje = len(df_b[df_b["Tipo de OS"].apply(normalizar_tipo_os) == "PRODUTIVA"])
                     base_norm = normalizar_nome_base(b_proj)
                     rota_val = int(st.session_state.get(f"inp_rota_{b_proj}", img_os_dict.get(b_proj, 529)))
                     
@@ -1125,7 +1347,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 for item in bases_config:
                     b_label = item["label"]
                     b_proj = item["projeto"]
-                    # Mantém df_b_all com TODAS as linhas da base (incluindo RETORNO DE CREDENCIADA)
                     df_b_all = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()].copy()
                     
                     t_base = totais_bases_calc.get(b_proj, {"montados": 65, "parados": 0})
@@ -1135,111 +1356,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     meta_c_b = int(st.session_state.get(f"inp_meta_c_{b_proj}", m_base * 8))
                     hoje_c_b = int(consultivo_totais.get(b_proj, 0))
                     
-                    def calc_exp_met(df_sub_raw, montados):
-                        if df_sub_raw is None or df_sub_raw.empty:
-                            return {
-                                "tot_os": 0, "os_aberta": 0, "produtivo": 0, "pontos": 0,
-                                "efic": 0.0, "media_os": 0.0, "proj_dia": 0,
-                                "q_ins": 0.0, "q_serv": 0.0, "tot_nd": 0, "q_nd": 0.0,
-                                "os_canc": 0, "saiu_toa": 0, "tot_gpon": 0, "q_gpon": 0.0,
-                                "tot_mig": 0, "q_mig": 0.0, "canc_mig": 0, "retorno_wo": 0,
-                                "tot_pme": 0, "q_pme": 0.0, "canc_pme": 0
-                            }
-
-                        # 1. RETORNO WO: extraído ANTES de remover RETORNO DE CREDENCIADA, contando por Contrato (WO)
-                        mask_ret = pd.Series(False, index=df_sub_raw.index)
-                        if "QUEBRAS" in df_sub_raw.columns:
-                            mask_ret = mask_ret | (df_sub_raw["QUEBRAS"].astype(str).str.upper().str.strip() == "RETORNO")
-                        if "Tipo de Serviço" in df_sub_raw.columns:
-                            mask_ret = mask_ret | (df_sub_raw["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO", na=False))
-                        df_ret_wo = filtrar_por_contrato_unico(df_sub_raw[mask_ret])
-                        retorno_wo_count = len(df_ret_wo)
-
-                        # 2. Filtra df_sub sem RETORNO DE CREDENCIADA para métricas de O.S.
-                        if "Tipo de Serviço" in df_sub_raw.columns:
-                            df_sub = df_sub_raw[~df_sub_raw["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)].copy()
-                        else:
-                            df_sub = df_sub_raw.copy()
-
-                        tot_os = len(df_sub)
-                        df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-                        df_improd = df_sub[df_sub["Tipo de OS"] == "IMPRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-                        df_aberto = df_sub[df_sub["Tipo de OS"] == "EM ABERTO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-                        df_canc = df_sub[df_sub["Tipo de OS"] == "CANCELADO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-                        df_saiu = df_sub[df_sub["Tipo de OS"] == "SAIU DO TOA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-
-                        prod_count = len(df_prod)
-                        improd_count = len(df_improd)
-                        aberta_count = len(df_aberto)
-                        
-                        den_quebra = improd_count + prod_count
-                        quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
-                        efic = max(0.0, 1.0 - quebra_pct)
-                        proj_os_exec = prod_count + (aberta_count * efic)
-                        proj_dia = int(round(proj_os_exec, 0))
-                        
-                        pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
-                        pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
-                        pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
-                        
-                        den_pts = pontos_improd + pontos_prod
-                        efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
-                        pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
-                        
-                        media_os = (proj_dia / montados) if montados > 0 else 0.0
-
-                        def c_sub_quebra(df_item, tipo_quebra_desejada):
-                            if df_item.empty or "QUEBRAS" not in df_item.columns or "Tipo de OS" not in df_item.columns:
-                                return 0.0
-                            df_cat = df_item[df_item["QUEBRAS"] == tipo_quebra_desejada]
-                            i_c = len(df_cat[df_cat["Tipo de OS"] == "IMPRODUTIVA"])
-                            p_c = len(df_cat[df_cat["Tipo de OS"] == "PRODUTIVA"])
-                            d_c = i_c + p_c
-                            return (i_c / d_c * 100) if d_c > 0 else 0.0
-
-                        df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
-                        df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
-                        
-                        # 3. PME por CONTRATO (Contagem de WO únicas e não soma de O.S.)
-                        pme_col = df_sub["PME"].fillna("").astype(str).str.strip().str.upper() if "PME" in df_sub.columns else pd.Series()
-                        df_pme_os = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
-                        df_pme_wo = filtrar_por_contrato_unico(df_pme_os)
-                        
-                        pme_wo_tot = len(df_pme_wo)
-                        pme_wo_q = c_sub_quebra(df_pme_wo, "INSTALAÇÃO")
-                        pme_wo_canc = len(df_pme_wo[df_pme_wo["CANCELADAS"] == "CANCELADO"]) if not df_pme_wo.empty and "CANCELADAS" in df_pme_wo.columns else 0
-
-                        servicos_nd_alvos = [
-                            "ADESAO - INSTALACAO DE ASSINATURA",
-                            "ADESAO - INSTALACAO DE ASSINATURA DIGITAL",
-                            "ADESAO ENTREGA STREAMING"
-                        ]
-                        ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
-                        df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
-                        
-                        nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
-                        nd_improd = len(df_nd_base[df_nd_base["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
-                        nd_aberto = len(df_nd_base[df_nd_base["Tipo de OS"] == "EM ABERTO"]) if "Tipo de OS" in df_nd_base.columns else 0
-                        den_nd = nd_improd + nd_prod
-                        efic_nd = max(0.0, 1.0 - (nd_improd / den_nd)) if den_nd > 0 else 0.0
-                        proj_nd = int(round(nd_prod + (nd_aberto * efic_nd), 0))
-
-                        return {
-                            "tot_os": tot_os, "os_aberta": aberta_count, "produtivo": prod_count, "pontos": pontos,
-                            "efic": round(efic * 100, 1), "media_os": round(media_os, 2), "proj_dia": proj_dia,
-                            "q_ins": c_sub_quebra(df_sub, "INSTALAÇÃO"), "q_serv": c_sub_quebra(df_sub, "SERVIÇOS"),
-                            "tot_nd": proj_nd, "q_nd": c_sub_quebra(df_nd_base, "INSTALAÇÃO"),
-                            "os_canc": len(df_canc), "saiu_toa": len(df_saiu),
-                            "tot_gpon": len(df_gpon), "q_gpon": c_sub_quebra(df_gpon, "SERVIÇOS"),
-                            "tot_mig": len(df_mig), "q_mig": c_sub_quebra(df_mig, "INSTALAÇÃO"),
-                            "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_mig.columns else 0,
-                            "retorno_wo": retorno_wo_count,
-                            "tot_pme": pme_wo_tot,
-                            "q_pme": pme_wo_q,
-                            "canc_pme": pme_wo_canc
-                        }
-
-                    res_b = calc_exp_met(df_b_all, m_base)
+                    res_b = calcular_metricas_completas(df_b_all, m_base)
                     rota_inicial_b = int(st.session_state.get(f"inp_rota_{b_proj}", img_os_dict.get(b_proj, 529)))
                     ganho_b = max(0, res_b["tot_os"] - rota_inicial_b)
 
@@ -1509,130 +1626,9 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             st.markdown("".join(tabela_html), unsafe_allow_html=True)
 
     else:
-        # Cálculo completo em tempo real da sessão ativa (com RETORNO WO e PME por CONTRATO / CONTAGEM)
         df_valido = st.session_state.df_valido
         dias_uteis = st.session_state.get("dias_uteis_auto", 25)
         df_config_eq_v = carregar_config_equipe()
-
-        def calcular_metricas(df_sub_raw, montados, hoje_c):
-            if isinstance(df_sub_raw, pd.DataFrame) and not df_sub_raw.empty:
-                # 1. RETORNO WO: calculado ANTES de remover RETORNO DE CREDENCIADA, contando por Contrato (WO)
-                mask_ret = pd.Series(False, index=df_sub_raw.index)
-                if "QUEBRAS" in df_sub_raw.columns:
-                    mask_ret = mask_ret | (df_sub_raw["QUEBRAS"].astype(str).str.upper().str.strip() == "RETORNO")
-                if "Tipo de Serviço" in df_sub_raw.columns:
-                    mask_ret = mask_ret | (df_sub_raw["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO", na=False))
-                df_ret_wo = filtrar_por_contrato_unico(df_sub_raw[mask_ret])
-                retorno_wo_count = len(df_ret_wo)
-
-                # 2. Filtra df_sub sem RETORNO DE CREDENCIADA para métricas de O.S.
-                if "Tipo de Serviço" in df_sub_raw.columns:
-                    df_sub = df_sub_raw[~df_sub_raw["Tipo de Serviço"].astype(str).str.upper().str.contains("RETORNO DE CREDENCIADA", na=False)].copy()
-                else:
-                    df_sub = df_sub_raw.copy()
-
-                tot_os = len(df_sub)
-                df_prod = df_sub[df_sub["Tipo de OS"] == "PRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-                df_improd = df_sub[df_sub["Tipo de OS"] == "IMPRODUTIVA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-                df_aberto = df_sub[df_sub["Tipo de OS"] == "EM ABERTO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-                df_canc = df_sub[df_sub["Tipo de OS"] == "CANCELADO"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-                df_saiu = df_sub[df_sub["Tipo de OS"] == "SAIU DO TOA"] if "Tipo de OS" in df_sub.columns else pd.DataFrame()
-
-                prod_count = len(df_prod)
-                improd_count = len(df_improd)
-                aberta_count = len(df_aberto)
-                
-                den_quebra = improd_count + prod_count
-                quebra_pct = (improd_count / den_quebra) if den_quebra > 0 else 0.0
-                efic = max(0.0, 1.0 - quebra_pct)
-                
-                proj_os_exec = prod_count + (aberta_count * efic)
-                proj_dia = int(round(proj_os_exec, 0))
-                
-                pontos_prod = df_prod["Pontos Prev."].sum() if "Pontos Prev." in df_prod.columns else 0.0
-                pontos_improd = df_improd["Pontos Prev."].sum() if "Pontos Prev." in df_improd.columns else 0.0
-                pontos_aberto = df_aberto["Pontos Prev."].sum() if "Pontos Prev." in df_aberto.columns else 0.0
-                
-                den_pts = pontos_improd + pontos_prod
-                efic_pts = max(0.0, 1.0 - (pontos_improd / den_pts)) if den_pts > 0 else 0.0
-                pontos = int(round(pontos_prod + (pontos_aberto * efic_pts), 0))
-                
-                media_os = (proj_dia / montados) if montados > 0 else 0.0
-                
-                os_canc = len(df_canc)
-                saiu_toa = len(df_saiu)
-
-                def c_sub_quebra(df_item, tipo_quebra_desejada):
-                    if df_item.empty or "QUEBRAS" not in df_item.columns or "Tipo de OS" not in df_item.columns:
-                        return 0.0
-                    df_cat = df_item[df_item["QUEBRAS"] == tipo_quebra_desejada]
-                    i_c = len(df_cat[df_cat["Tipo de OS"] == "IMPRODUTIVA"])
-                    p_c = len(df_cat[df_cat["Tipo de OS"] == "PRODUTIVA"])
-                    d_c = i_c + p_c
-                    return (i_c / d_c * 100) if d_c > 0 else 0.0
-
-                df_ins = df_sub[df_sub["QUEBRAS"] == "INSTALAÇÃO"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
-                df_serv = df_sub[df_sub["QUEBRAS"] == "SERVIÇOS"] if "QUEBRAS" in df_sub.columns else pd.DataFrame()
-                
-                servicos_nd_alvos = [
-                    "ADESAO - INSTALACAO DE ASSINATURA",
-                    "ADESAO - INSTALACAO DE ASSINATURA DIGITAL",
-                    "ADESAO ENTREGA STREAMING"
-                ]
-                ts_col = df_sub["Tipo de Serviço"].astype(str).str.upper().str.strip() if "Tipo de Serviço" in df_sub.columns else pd.Series()
-                df_nd_base = df_sub[ts_col.isin([s.upper() for s in servicos_nd_alvos])] if not ts_col.empty else pd.DataFrame()
-                
-                nd_prod = len(df_nd_base[df_nd_base["Tipo de OS"] == "PRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
-                nd_improd = len(df_nd_base[df_nd_base["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_nd_base.columns else 0
-                nd_aberto = len(df_nd_base[df_nd_base["Tipo de OS"] == "EM ABERTO"]) if "Tipo de OS" in df_nd_base.columns else 0
-                den_nd = nd_improd + nd_prod
-                efic_nd = max(0.0, 1.0 - (nd_improd / den_nd)) if den_nd > 0 else 0.0
-                proj_nd = int(round(nd_prod + (nd_aberto * efic_nd), 0))
-
-                df_gpon = df_sub[df_sub["ATIVIDADES"] == "GPON"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
-                df_mig = df_sub[df_sub["ATIVIDADES"] == "MIGRAÇÃO"] if "ATIVIDADES" in df_sub.columns else pd.DataFrame()
-                
-                # 3. PME por CONTRATO (Contagem de WO únicas e não soma de O.S.)
-                pme_col = df_sub["PME"].fillna("").astype(str).str.strip().str.upper() if "PME" in df_sub.columns else pd.Series()
-                df_pme_os = df_sub[(pme_col != "") & (pme_col != "NAN") & (pme_col.str.contains("PME|EMP", regex=True))] if not pme_col.empty else pd.DataFrame()
-                df_pme_wo = filtrar_por_contrato_unico(df_pme_os)
-                
-                df_pme_wo_ins = df_pme_wo[df_pme_wo["QUEBRAS"] == "INSTALAÇÃO"] if not df_pme_wo.empty and "QUEBRAS" in df_pme_wo.columns else pd.DataFrame()
-                raw_q_pme_wo = len(df_pme_wo_ins[df_pme_wo_ins["Tipo de OS"] == "IMPRODUTIVA"]) if not df_pme_wo_ins.empty and "Tipo de OS" in df_pme_wo_ins.columns else 0
-                raw_tot_pme_wo = len(df_pme_wo_ins[df_pme_wo_ins["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]) if not df_pme_wo_ins.empty and "Tipo de OS" in df_pme_wo_ins.columns else 0
-
-                return {
-                    "tot_os": tot_os, "os_aberta": aberta_count, "produtivo": prod_count,
-                    "quebra_geral": improd_count, "pontos": pontos,
-                    "efic": efic * 100, "media_os": media_os, "proj_dia": proj_dia,
-                    "os_canc": os_canc, "saiu_toa": saiu_toa,
-                    "q_ins": c_sub_quebra(df_sub, "INSTALAÇÃO"), "q_serv": c_sub_quebra(df_sub, "SERVIÇOS"),
-                    "tot_nd": proj_nd, "q_nd": c_sub_quebra(df_nd_base, "INSTALAÇÃO"),
-                    "tot_gpon": len(df_gpon), "q_gpon": c_sub_quebra(df_gpon, "SERVIÇOS"),
-                    "tot_mig": len(df_mig), "q_mig": c_sub_quebra(df_mig, "INSTALAÇÃO"),
-                    "canc_mig": len(df_mig[df_mig["CANCELADAS"] == "CANCELADO"]) if "CANCELADAS" in df_mig.columns else 0,
-                    "retorno_wo": retorno_wo_count,
-                    "tot_pme": len(df_pme_wo),
-                    "q_pme": c_sub_quebra(df_pme_wo, "INSTALAÇÃO"),
-                    "canc_pme": len(df_pme_wo[df_pme_wo["CANCELADAS"] == "CANCELADO"]) if not df_pme_wo.empty and "CANCELADAS" in df_pme_wo.columns else 0,
-                    "_raw_q_ins": len(df_ins[df_ins["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_ins.columns else 0,
-                    "_raw_tot_ins": len(df_ins[df_ins["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]) if "Tipo de OS" in df_ins.columns else 0,
-                    "_raw_q_serv": len(df_serv[df_serv["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_serv.columns else 0,
-                    "_raw_tot_serv": len(df_serv[df_serv["Tipo de OS"].isin(["PRODUTIVA", "IMPRODUTIVA"])]) if "Tipo de OS" in df_serv.columns else 0,
-                    "_raw_q_nd": nd_improd,
-                    "_raw_q_gpon": len(df_gpon[df_gpon["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_gpon.columns else 0,
-                    "_raw_q_mig": len(df_mig[df_mig["Tipo de OS"] == "IMPRODUTIVA"]) if "Tipo de OS" in df_mig.columns else 0,
-                    "_raw_q_pme": raw_q_pme_wo,
-                    "_raw_tot_pme": raw_tot_pme_wo
-                }
-            return {
-                "tot_os": 0, "os_aberta": 0, "produtivo": 0, "quebra_geral": 0, "pontos": 0,
-                "efic": 0.0, "media_os": 0.0, "proj_dia": 0, "os_canc": 0, "saiu_toa": 0,
-                "q_ins": 0.0, "q_serv": 0.0, "tot_nd": 0, "q_nd": 0.0, "tot_gpon": 0, "q_gpon": 0.0,
-                "tot_mig": 0, "q_mig": 0.0, "canc_mig": 0, "retorno_wo": 0, "tot_pme": 0, "q_pme": 0.0,
-                "canc_pme": 0, "_raw_q_ins": 0, "_raw_tot_ins": 0, "_raw_q_serv": 0, "_raw_tot_serv": 0,
-                "_raw_q_nd": 0, "_raw_q_gpon": 0, "_raw_q_mig": 0, "_raw_q_pme": 0, "_raw_tot_pme": 0
-            }
 
         g_parados = 0; g_montados = 0; g_meta_os = 0; g_proj_os = 0
         g_meta_cons = 0; g_proj_cons = 0; g_hoje_cons = 0; g_os_cons = 0
@@ -1640,7 +1636,8 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         g_sem_cons = 0; g_nd = 0; g_canc = 0; g_saiu_toa = 0; g_ganho = 0
         g_gpon = 0; g_mig = 0; g_mig_canc = 0; g_retorno = 0; g_pme = 0; g_pme_canc = 0
         g_raw_ins_q = 0; g_raw_ins_tot = 0; g_raw_serv_q = 0; g_raw_serv_tot = 0
-        g_raw_nd_q = 0; g_raw_gpon_q = 0; g_raw_mig_q = 0; g_raw_pme_q = 0; g_raw_pme_tot = 0
+        g_raw_nd_q = 0; g_raw_nd_tot = 0; g_raw_gpon_q = 0; g_raw_gpon_tot = 0
+        g_raw_mig_q = 0; g_raw_mig_tot = 0; g_raw_pme_q = 0; g_raw_pme_tot = 0
 
         metricas_bases = {}
         consultivo_totais = st.session_state.get("consultivo_totais", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
@@ -1649,9 +1646,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             b_label = item["label"]
             b_proj = item["projeto"]
             
-            # Passa df_b_all completo (com RETORNO DE CREDENCIADA) para calcular_metricas extrair RETORNO WO antes de filtrar O.S.
             df_b_all = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()].copy() if isinstance(df_valido, pd.DataFrame) and "Projeto" in df_valido.columns else pd.DataFrame()
-            
             df_b_eq_v = df_config_eq_v[df_config_eq_v["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq_v.empty else pd.DataFrame()
             
             sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
@@ -1664,7 +1659,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             meta_c_b = int(st.session_state.get(f"inp_meta_c_{b_proj}", m_base * 8))
             hoje_c_b = int(consultivo_totais.get(b_proj, 0))
             
-            res_b = calcular_metricas(df_b_all, m_base, hoje_c_b)
+            res_b = calcular_metricas_completas(df_b_all, m_base)
             
             tot_os_previa_b = res_b["tot_os"]
             rota_inicial_b = buscar_os_inicial_sheets(b_proj, data_formatada)
@@ -1684,11 +1679,13 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
             g_canc += res_b["os_canc"]; g_saiu_toa += res_b["saiu_toa"]; g_ganho += ganho_b
             g_gpon += res_b["tot_gpon"]; g_mig += res_b["tot_mig"]; g_mig_canc += res_b["canc_mig"]
             g_retorno += res_b["retorno_wo"]; g_pme += res_b["tot_pme"]; g_pme_canc += res_b["canc_pme"]
+            
             g_raw_ins_q += res_b["_raw_q_ins"]; g_raw_ins_tot += res_b["_raw_tot_ins"]
             g_raw_serv_q += res_b["_raw_q_serv"]; g_raw_serv_tot += res_b["_raw_tot_serv"]
-            g_raw_nd_q += res_b["_raw_q_nd"]; g_raw_gpon_q += res_b["_raw_q_gpon"]
-            g_raw_mig_q += res_b["_raw_q_mig"]; g_raw_pme_q += res_b["_raw_q_pme"]
-            g_raw_pme_tot += res_b["_raw_tot_pme"]
+            g_raw_nd_q += res_b["_raw_q_nd"]; g_raw_nd_tot += res_b["_raw_tot_nd"]
+            g_raw_gpon_q += res_b["_raw_q_gpon"]; g_raw_gpon_tot += res_b["_raw_tot_gpon"]
+            g_raw_mig_q += res_b["_raw_q_mig"]; g_raw_mig_tot += res_b["_raw_tot_mig"]
+            g_raw_pme_q += res_b["_raw_q_pme"]; g_raw_pme_tot += res_b["_raw_tot_pme"]
 
             metricas_bases[b_proj] = {
                 "res": res_b, "p_base": p_base, "m_base": m_base, "meta_os": meta_os_b,
@@ -1723,185 +1720,4 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                 f'<td>{fmt_br(res["proj_dia"])}</td>'
                 f'<td class="col-destaque-amarelo">{fmt_br(res["os_sem_c"])}</td>'
                 f'<td>{fmt_br(res["q_ins"], 1)}%</td>'
-                f'<td>{fmt_br(res["q_serv"], 1)}%</td>'
-                f'<td>{fmt_br(res["q_nd"], 1)}%</td>'
-                f'<td>{fmt_br(res["tot_nd"])}</td>'
-                f'<td>{fmt_br(res["os_canc"])}</td>'
-                f'<td>{fmt_br(res["saiu_toa"])}</td>'
-                f'<td>{fmt_br(m["ganho"])}</td>'
-                f'<td>{fmt_br(res["tot_gpon"])}</td>'
-                f'<td>{fmt_br(res["q_gpon"], 1)}%</td>'
-                f'<td>{fmt_br(res["tot_mig"])}</td>'
-                f'<td>{fmt_br(res["q_mig"], 1)}%</td>'
-                f'<td>{fmt_br(res["canc_mig"])}</td>'
-                f'<td>{fmt_br(res["retorno_wo"])}</td>'
-                f'<td>{fmt_br(res["tot_pme"])}</td>'
-                f'<td>{fmt_br(res["q_pme"], 1)}%</td>'
-                f'<td>{fmt_br(res["canc_pme"])}</td>'
-                f'</tr>'
-            )
-
-        g_den_quebra = g_quebra + g_prod
-        g_efic = (max(0.0, 1.0 - (g_quebra / g_den_quebra)) * 100) if g_den_quebra > 0 else 0.0
-        g_proj_exec_total = int(round(g_prod + (g_aberta * (g_efic / 100.0)), 0))
-        g_media_os = (g_proj_exec_total / g_montados) if g_montados > 0 else 0.0
-        g_os_sem_c_total = g_proj_exec_total - g_os_cons
-        
-        tot_ins_geral = sum([m["res"]["_raw_tot_ins"] for m in metricas_bases.values()])
-        q_ins_geral = (sum([m["res"]["_raw_q_ins"] for m in metricas_bases.values()]) / tot_ins_geral * 100) if tot_ins_geral > 0 else 0.0
-
-        tot_serv_geral = sum([m["res"]["_raw_tot_serv"] for m in metricas_bases.values()])
-        q_serv_geral = (sum([m["res"]["_raw_q_serv"] for m in metricas_bases.values()]) / tot_serv_geral * 100) if tot_serv_geral > 0 else 0.0
-
-        g_q_nd = (sum([m["res"]["_raw_q_nd"] for m in metricas_bases.values()]) / g_nd * 100) if g_nd > 0 else 0.0
-        g_q_gpon = (sum([m["res"]["_raw_q_gpon"] for m in metricas_bases.values()]) / g_gpon * 100) if g_gpon > 0 else 0.0
-        g_q_mig = (sum([m["res"]["_raw_q_mig"] for m in metricas_bases.values()]) / g_mig * 100) if g_mig > 0 else 0.0
-        g_q_pme = (g_raw_pme_q / g_raw_pme_tot * 100) if g_raw_pme_tot > 0 else 0.0
-
-        tabela_html.append(
-            f'<tr class="tr-total">'
-            f'<td style="text-align: left; padding-left: 8px;">TOTAL INSTALAÇÃO</td>'
-            f'<td>{fmt_br(g_parados)}</td>'
-            f'<td class="col-destaque-amarelo">{fmt_br(g_montados)}</td>'
-            f'<td>{fmt_br(g_meta_os)}</td>'
-            f'<td class="red-text">{fmt_br(g_proj_os)}</td>'
-            f'<td>{fmt_br(g_meta_cons)}</td>'
-            f'<td class="red-text">{fmt_br(g_proj_cons)}</td>'
-            f'<td>{fmt_br(g_hoje_cons)}</td>'
-            f'<td>{fmt_br(g_os_cons)}</td>'
-            f'<td>{fmt_br(g_tot_os)}</td>'
-            f'<td>{fmt_br(g_aberta)}</td>'
-            f'<td>{fmt_br(g_pontos)}</td>'
-            f'<td>{fmt_br(g_efic, 1)}%</td>'
-            f'<td class="col-destaque-azul">{fmt_br(g_media_os, 2)}</td>'
-            f'<td>{fmt_br(g_proj_exec_total)}</td>'
-            f'<td class="col-destaque-amarelo">{fmt_br(g_os_sem_c_total)}</td>'
-            f'<td>{fmt_br(q_ins_geral, 1)}%</td>'
-            f'<td>{fmt_br(q_serv_geral, 1)}%</td>'
-            f'<td>{fmt_br(g_q_nd, 1)}%</td>'
-            f'<td>{fmt_br(g_nd)}</td>'
-            f'<td>{fmt_br(g_canc)}</td>'
-            f'<td>{fmt_br(g_saiu_toa)}</td>'
-            f'<td>{fmt_br(g_ganho)}</td>'
-            f'<td>{fmt_br(g_gpon)}</td>'
-            f'<td>{fmt_br(g_q_gpon, 1)}%</td>'
-            f'<td>{fmt_br(g_mig)}</td>'
-            f'<td>{fmt_br(g_q_mig, 1)}%</td>'
-            f'<td>{fmt_br(g_mig_canc)}</td>'
-            f'<td>{fmt_br(g_retorno)}</td>'
-            f'<td>{fmt_br(g_pme)}</td>'
-            f'<td>{fmt_br(g_q_pme, 1)}%</td>'
-            f'<td>{fmt_br(g_pme_canc)}</td>'
-            f'</tr>'
-            f'</tbody>'
-            f'</table>'
-        )
-
-        st.markdown("".join(tabela_html), unsafe_allow_html=True)
-        st.markdown("<br><hr><br>", unsafe_allow_html=True)
-
-        # --- BLOCOS INDEPENDENTES POR BASE COM OS SUPERVISORES ---
-        st.markdown("### 🏢 Detalhamento Operacional Separado por Base")
-
-        for item in bases_config:
-            b_label = item["label"]
-            b_proj = item["projeto"]
-            m = metricas_bases[b_proj]
-            res_b = m["res"]
-            
-            with st.expander(f"📂 Base: {b_label} (Clique para Expandir/Recolher Detalhamento)"):
-                df_b_all = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()].copy() if isinstance(df_valido, pd.DataFrame) and "Projeto" in df_valido.columns else pd.DataFrame()
-                sups_b = st.session_state.supervisores_por_base.get(b_proj, [])
-                
-                tabela_bloco_html = [
-                    gerar_cabecalho_html(),
-                    f'<tr class="tr-base">'
-                    f'<td style="text-align: left; padding-left: 8px;">{b_label}</td>'
-                    f'<td>{fmt_br(m["p_base"])}</td>'
-                    f'<td class="col-destaque-amarelo">{fmt_br(m["m_base"])}</td>'
-                    f'<td>{fmt_br(m["meta_os"])}</td>'
-                    f'<td class="red-text">{fmt_br(m["proj_os"])}</td>'
-                    f'<td>{fmt_br(m["meta_c"])}</td>'
-                    f'<td class="red-text">{fmt_br(m["proj_c"])}</td>'
-                    f'<td>{fmt_br(m["hoje_c"])}</td>'
-                    f'<td>{fmt_br(m["os_consult"])}</td>'
-                    f'<td>{fmt_br(res_b["tot_os"])}</td>'
-                    f'<td>{fmt_br(res_b["os_aberta"])}</td>'
-                    f'<td>{fmt_br(res_b["pontos"])}</td>'
-                    f'<td>{fmt_br(res_b["efic"], 1)}%</td>'
-                    f'<td class="col-destaque-azul">{fmt_br(res_b["media_os"], 2)}</td>'
-                    f'<td>{fmt_br(res_b["proj_dia"])}</td>'
-                    f'<td class="col-destaque-amarelo">{fmt_br(res_b["os_sem_c"])}</td>'
-                    f'<td>{fmt_br(res_b["q_ins"], 1)}%</td>'
-                    f'<td>{fmt_br(res_b["q_serv"], 1)}%</td>'
-                    f'<td>{fmt_br(res_b["q_nd"], 1)}%</td>'
-                    f'<td>{fmt_br(res_b["tot_nd"])}</td>'
-                    f'<td>{fmt_br(res_b["os_canc"])}</td>'
-                    f'<td>{fmt_br(res_b["saiu_toa"])}</td>'
-                    f'<td>{fmt_br(m["ganho"])}</td>'
-                    f'<td>{fmt_br(res_b["tot_gpon"])}</td>'
-                    f'<td>{fmt_br(res_b["q_gpon"], 1)}%</td>'
-                    f'<td>{fmt_br(res_b["tot_mig"])}</td>'
-                    f'<td>{fmt_br(res_b["q_mig"], 1)}%</td>'
-                    f'<td>{fmt_br(res_b["canc_mig"])}</td>'
-                    f'<td>{fmt_br(res_b["retorno_wo"])}</td>'
-                    f'<td>{fmt_br(res_b["tot_pme"])}</td>'
-                    f'<td>{fmt_br(res_b["q_pme"], 1)}%</td>'
-                    f'<td>{fmt_br(res_b["canc_pme"])}</td>'
-                    f'</tr>'
-                ]
-
-                for s in sups_b:
-                    df_s = df_b_all[df_b_all["Supervisor"] == s] if not df_b_all.empty and "Supervisor" in df_b_all.columns else pd.DataFrame()
-                    p_sup = st.session_state.get(f"p_{b_proj}_{s}", 0)
-                    m_sup = st.session_state.get(f"m_{b_proj}_{s}", 20)
-                    res_s = calcular_metricas(df_s, m_sup, 0)
-                    primeiro_nome = s.split()[0]
-                    
-                    tabela_bloco_html.append(
-                        f'<tr class="tr-sup">'
-                        f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
-                        f'<td>{fmt_br(p_sup)}</td>'
-                        f'<td class="col-destaque-amarelo">{fmt_br(m_sup)}</td>'
-                        f'<td></td><td></td><td></td><td></td><td></td><td></td>'
-                        f'<td>{fmt_br(res_s["tot_os"])}</td>'
-                        f'<td>{fmt_br(res_s["os_aberta"])}</td>'
-                        f'<td>{fmt_br(res_s["pontos"])}</td>'
-                        f'<td>{fmt_br(res_s["efic"], 1)}%</td>'
-                        f'<td class="col-destaque-azul">{fmt_br(res_s["media_os"], 2)}</td>'
-                        f'<td>{fmt_br(res_s["proj_dia"])}</td>'
-                        f'<td></td>'
-                        f'<td>{fmt_br(res_s["q_ins"], 1)}%</td>'
-                        f'<td>{fmt_br(res_s["q_serv"], 1)}%</td>'
-                        f'<td>{fmt_br(res_s["q_nd"], 1)}%</td>'
-                        f'<td>{fmt_br(res_s["tot_nd"])}</td>'
-                        f'<td>{fmt_br(res_s["os_canc"])}</td>'
-                        f'<td>{fmt_br(res_s["saiu_toa"])}</td>'
-                        f'<td></td><td></td><td></td><td></td><td></td><td></td>'
-                        f'<td>{fmt_br(res_s["retorno_wo"])}</td>'
-                        f'<td>{fmt_br(res_s["tot_pme"])}</td>'
-                        f'<td>{fmt_br(res_s["q_pme"], 1)}%</td>'
-                        f'<td>{fmt_br(res_s["canc_pme"])}</td>'
-                        f'</tr>'
-                    )
-
-                tabela_bloco_html.append('</tbody></table>')
-                st.markdown("".join(tabela_bloco_html), unsafe_allow_html=True)
-                st.markdown("<br>", unsafe_allow_html=True)
-
-    if st.session_state.get("df_aniel_full") is not None:
-        try:
-            df_export = st.session_state["df_aniel_full"]
-            if not df_export.empty:
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                    df_export.to_excel(writer, index=False)
-                
-                st.download_button(
-                    label="📥 Baixar Planilha ANIEL Tratada (.xlsx)",
-                    data=output.getvalue(),
-                    file_name="Planilha_Tratada_Aniel.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-        except Exception:
-            pass
+                f'<td>{fmt_br(res["q_serv
