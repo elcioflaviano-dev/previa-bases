@@ -23,9 +23,9 @@ st.set_page_config(
 # --- URL DA PLANILHA DO GOOGLE SHEETS ---
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1bF7cQaoEkj-UuKCGmJ4PThoy-CdSPlVg8i3XEB6cu58/edit?gid=0#gid=0"
 
-# --- REGRAS GLOBAIS DE SUPERVISORES POR BASE ---
+# --- REGRAS GLOBAIS DE SUPERVISORES / MONITORES POR BASE ---
 MAPA_SUPERVISORES_BASE = {
-    "NET-ABCDM": ["EDSON MARCO", "MAICON", "NELSON", "APOIO"],
+    "NET-ABCDM": ["EDSON MARCO", "MAICON", "NELSON", "MARCOS ROBERTO", "APOIO"],
     "NET-Guarulhos": ["ADRIANO", "DANIELE", "FERNANDO", "PALOMA"],
     "NET-LESTE": ["ALAN", "ELISANGELA", "FRANCISCO", "FRANCISO", "JOAO CARLOS", "MIRON"]
 }
@@ -47,7 +47,7 @@ def fmt_br(val, decimais=0):
             s = s.replace(",", "X").replace(".", ",").replace("X", ".")
             return s
         else:
-            return f"{int(round(float(val), 0)):,}".replace(",", ".")
+            return f"{int(round(float(val), 0)):,}".replace(".", ".")
     except Exception:
         return str(val)
 
@@ -125,6 +125,44 @@ def limpar_texto(val):
         return ""
     s = remover_acentos(str(val).strip().upper())
     return re.sub(r"\s+", " ", s)
+
+def eh_supervisor_invalido(nome_sup):
+    s_up = limpar_texto(nome_sup)
+    if s_up in ["", "NAN", "NONE", "NULL", "N/A", "#N/A", "-", "0", "0.0"]:
+        return True
+    if "IVAN" in s_up:
+        return True
+    return False
+
+def extrair_supervisores_aniel_base(df_base_temp, b_proj):
+    """
+    Extrai monitores/supervisores diretamente da coluna Supervisor do arquivo ANIEL
+    para a base informada, garantindo MARCOS ROBERTO no ABCDM quando aplicável.
+    """
+    lista_final = []
+    if df_base_temp is not None and not df_base_temp.empty and "Supervisor" in df_base_temp.columns:
+        vals = df_base_temp["Supervisor"].dropna().astype(str).tolist()
+        for v in vals:
+            s_clean = re.sub(r"\s+", " ", v.strip().upper())
+            if not eh_supervisor_invalido(s_clean):
+                if s_clean not in lista_final:
+                    lista_final.append(s_clean)
+
+    # Garante que MARCOS ROBERTO apareça na base ABCDM caso exista no mapeamento ou na base
+    if "ABCDM" in b_proj.upper():
+        tem_marcos = any("MARCOS" in limpar_texto(x) for x in lista_final)
+        if not tem_marcos and len(lista_final) > 0:
+            lista_final.append("MARCOS ROBERTO")
+
+    if not lista_final:
+        padroes = {
+            "NET-ABCDM": ["EDSON MARCO PINHEIRO", "MAICON APARECIDO FARIA", "NELSON ALVES OLIVEIRA JUNIOR", "MARCOS ROBERTO"],
+            "NET-Guarulhos": ["ADRIANO NASCIMENTO DA SILVA", "DANIELE BARBOSA DE OLIVEIRA", "FERNANDO CESAR COELHO RAMOS", "PALOMA REGINA SILVA BATISTA"],
+            "NET-LESTE": ["ALAN DE ANDRADE DIAS", "ELISANGELA CASSIMIRO GONCALVES", "FRANCISCO GERALDO CARVALHO JUNIOR", "JOAO CARLOS FERREIRA MIRON"]
+        }
+        lista_final = padroes.get(b_proj, [])
+
+    return sorted(list(dict.fromkeys(lista_final)))
 
 def padrao_quebra_categoria(val, tipo_servico_norm=""):
     v = limpar_texto(val)
@@ -725,6 +763,7 @@ def processar_arquivo_msg(up_msg):
         "EDSON": ["EDSON MARCO", "EDSON"],
         "MAICON": ["MAICON FARIA", "MAICON APARECIDO", "MAICON"],
         "NELSON": ["NELSON JUNIOR", "NELSON ALVES", "NELSON"],
+        "MARCOS": ["MARCOS ROBERTO", "MARCOS"],
         "ADRIANO": ["ADRIANO NASCIMENTO", "ADRIANO"],
         "DANIELE": ["DANIELE BARBOSA", "DANIELE"],
         "FERNANDO": ["FERNANDO CESAR", "FERNANDO COELHO", "FERNANDO"],
@@ -739,7 +778,7 @@ def processar_arquivo_msg(up_msg):
     tecnicos_extraidos = []
 
     padrao_linha = re.compile(
-        r'(\d{4,6}\s*-\s*[A-Z\s]{4,45}?)\s+(MAICON[A-Z\s]*|NELSON[A-Z\s]*|EDSON[A-Z\s]*|ADRIANO[A-Z\s]*|DANIELE[A-Z\s]*|FERNANDO[A-Z\s]*|PALOMA[A-Z\s]*|ALAN[A-Z\s]*|ELISANGELA[A-Z\s]*|FRANCISC?O[A-Z\s]*|JOAO CARLOS[A-Z\s]*)\s+(FALTA|FOLGA|ATESTADO|FERIAS|SUSPENSAO|TREINAMENTO|SINISTRO|OFICINA|MANUTENCAO)',
+        r'(\d{4,6}\s*-\s*[A-Z\s]{4,45}?)\s+(MAICON[A-Z\s]*|NELSON[A-Z\s]*|EDSON[A-Z\s]*|MARCOS[A-Z\s]*|ADRIANO[A-Z\s]*|DANIELE[A-Z\s]*|FERNANDO[A-Z\s]*|PALOMA[A-Z\s]*|ALAN[A-Z\s]*|ELISANGELA[A-Z\s]*|FRANCISC?O[A-Z\s]*|JOAO CARLOS[A-Z\s]*)\s+(FALTA|FOLGA|ATESTADO|FERIAS|SUSPENSAO|TREINAMENTO|SINISTRO|OFICINA|MANUTENCAO)',
         re.IGNORECASE
     )
     matches = padrao_linha.findall(texto_up)
@@ -1141,9 +1180,8 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                     df_aniel["Tipo de Serviço"] = df_aniel[col_ts_name].fillna("").astype(str).str.strip().str.upper()
 
                     df_valido = df_aniel[
-                        (df_aniel["Supervisor"] != "") &
-                        (df_aniel["Tipo de Serviço"] != "") &
-                        (~df_aniel["Supervisor"].str.contains("IVAN", na=False))
+                        (~df_aniel["Supervisor"].apply(eh_supervisor_invalido)) &
+                        (df_aniel["Tipo de Serviço"] != "")
                     ].copy()
 
                     st.session_state.df_valido = df_valido
@@ -1153,24 +1191,7 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
                     for item in bases_config:
                         b_proj = item["projeto"]
                         df_base_temp = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()]
-                        sups_brutos = sorted(df_base_temp["Supervisor"].unique().tolist())
-                        
-                        sups_filtrados = []
-                        for s in sups_brutos:
-                            s_up = str(s).strip().upper()
-                            if "ABCDM" in b_proj.upper():
-                                if any(sub in s_up for sub in ["EDSON", "MAICON", "NELSON", "APOIO"]):
-                                    sups_filtrados.append(s_up)
-                            elif "LESTE" in b_proj.upper():
-                                if any(sub in s_up for sub in ["ALAN", "ELISANGELA", "FRANCISCO", "JOAO CARLOS", "MIRON"]):
-                                    sups_filtrados.append(s_up)
-                            elif "GUARULHOS" in b_proj.upper():
-                                if any(sub in s_up for sub in ["ADRIANO", "DANIELE", "FERNANDO", "PALOMA"]):
-                                    sups_filtrados.append(s_up)
-                            else:
-                                sups_filtrados.append(s_up)
-                                
-                        sup_map[b_proj] = sorted(list(set(sups_filtrados)))
+                        sup_map[b_proj] = extrair_supervisores_aniel_base(df_base_temp, b_proj)
 
                     st.session_state.supervisores_por_base = sup_map
                     st.session_state.processado_sucesso = True
@@ -1250,7 +1271,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 st.session_state["img_os"][b_proj] = int(rota_inicial_val)
                 
                 st.markdown("---")
-                st.markdown(f"##### 👥 2. Equipe de Supervisores da Base {b_label}:")
+                st.markdown(f"##### 👥 2. Equipe de Supervisores / Monitores da Base {b_label}:")
                 sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
                 soma_m_base = 0
                 soma_p_base = 0
@@ -1271,7 +1292,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                         if email_parados_auto:
                             parados_email_val = 0
                             for k_sup, v_qtd in email_parados_auto.items():
-                                if k_sup in sup.upper():
+                                if k_sup in limpar_texto(sup):
                                     parados_email_val = v_qtd
                                     break
                         
@@ -1904,7 +1925,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
         st.markdown("".join(tabela_html), unsafe_allow_html=True)
         st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
-        # --- BLOCOS INDEPENDENTES POR BASE COM OS SUPERVISORES ---
+        # --- BLOCOS INDEPENDENTES POR BASE COM OS SUPERVISORES / MONITORES ---
         st.markdown("### 🏢 Detalhamento Operacional Separado por Base")
         cons_sups_all = st.session_state.get("consultivo_supervisores", {})
 
@@ -1966,7 +1987,7 @@ elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
                     
                     dados_cons_s = {"contratos_hoje": 0, "produtos_hoje": 0, "produtos_mes": 0}
                     for k_cs, val_cs in cons_sups_base.items():
-                        if k_cs.split()[0] in s.upper() or primeiro_nome in k_cs:
+                        if k_cs.split()[0] in limpar_texto(s) or limpar_texto(primeiro_nome) in k_cs:
                             dados_cons_s = val_cs
                             break
                     
