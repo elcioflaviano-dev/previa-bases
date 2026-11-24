@@ -30,6 +30,8 @@ MAPA_SUPERVISORES_BASE = {
     "NET-LESTE": ["ALAN", "ELISANGELA", "FRANCISCO", "FRANCISO", "JOAO CARLOS", "MIRON"]
 }
 
+LINHAS_VT = ["VT_LESTE", "VT_GUARULHOS", "MDU_OUTAGE"]
+
 # --- FUNÇÕES DE NAVEGAÇÃO ---
 def ir_para_passo_2():
     st.session_state["pagina_atual"] = "2. Dados Operacionais por Base"
@@ -40,8 +42,8 @@ def ir_para_passo_3():
 # --- FUNÇÃO DE FORMATAÇÃO PADRÃO BRASILEIRO ---
 def fmt_br(val, decimais=0):
     try:
-        if pd.isna(val):
-            val = 0.0
+        if val is None or pd.isna(val) or str(val).strip() == "":
+            return ""
         if decimais > 0:
             s = f"{float(val):,.{decimais}f}"
             s = s.replace(",", "X").replace(".", ",").replace("X", ".")
@@ -86,6 +88,14 @@ st.markdown("""
     .th-retorno { background-color: #a9dfbf; color: #145a32; }
     .th-pme { background-color: #aed6f1; color: #1b4f72; }
     
+    /* Estilos específicos TOTALE_VT e MDU */
+    .th-vt-title { background-color: #a0522d; color: #ffffff; font-weight: 900; font-size: 12px; }
+    .th-vt-dark { background-color: #1c2833; color: #ffffff; font-weight: 700; }
+    .th-vt-cons { background-color: #f4d03f; color: #1c2833; font-weight: 700; }
+    .th-vt-prev { background-color: #82e0aa; color: #145a32; font-weight: 700; }
+    .td-vt-prev { background-color: #82e0aa !important; color: #145a32; font-weight: bold; }
+    .th-mdu-title { background-color: #2ecc71; color: #145a32; font-weight: 900; font-size: 12px; }
+    
     .col-destaque-amarelo { background-color: #fcf3cf !important; font-weight: bold; color: #7d6608; }
     .col-destaque-azul { background-color: #d4efdf !important; font-weight: bold; color: #145a32; }
     
@@ -121,14 +131,12 @@ def remover_acentos(txt):
     return "".join([c for c in nfkd if not unicodedata.combining(c)])
 
 def limpar_texto(val):
-    """Remove acentos, espaços duplos e padroniza para maiúsculas."""
     if pd.isna(val):
         return ""
     s = remover_acentos(str(val).strip().upper())
     return re.sub(r"\s+", " ", s)
 
 def padrao_quebra_categoria(val, tipo_servico_norm=""):
-    """Padroniza a categoria da coluna QUEBRAS (INSTALAÇÃO, SERVIÇOS ou RETORNO)."""
     v = limpar_texto(val)
     ts = limpar_texto(tipo_servico_norm)
     
@@ -155,7 +163,6 @@ def obter_coluna_contrato(df):
     return next((c for c in df.columns if "contrato" in c.lower()), None)
 
 def filtrar_por_contrato_unico(df):
-    """Garante contagem por Contrato (WO) único e não soma de O.S."""
     if df is None or df.empty:
         return pd.DataFrame()
     col_c = obter_coluna_contrato(df)
@@ -167,7 +174,7 @@ def filtrar_por_contrato_unico(df):
     return df
 
 # ==============================================================================
-# LÓGICA DO CONSULTIVO EXTRAÍDA DO CÓDIGO DA TV (TELAS 5, 6 E 18)
+# LÓGICA DO CONSULTIVO
 # ==============================================================================
 def identificar_base_e_supervisor_consultivo(sup_str, base_col_str=""):
     sup_clean = limpar_texto(sup_str)
@@ -184,21 +191,12 @@ def identificar_base_e_supervisor_consultivo(sup_str, base_col_str=""):
     return "DESCARTADO", "DESCARTADO"
 
 def processar_planilha_consultivo(df_cons_raw, df_aniel, data_ref_str):
-    """
-    Replica exatamente a lógica do Consultivo das Telas 5, 6 e 18 da TV:
-    - Separa por Supervisor e Base
-    - Contabiliza Contratos (nunique) e Soma de Produtos/O.S. (QTD_PRODUTOS_CALC)
-    - Filtra Hoje (data_ref_str) vs. Passado (1º dia do mês até ontem)
-    - Calcula a Projeção Mensal (media_diaria_passada * total_dias_uteis_mes)
-    """
     df_cons = df_cons_raw.copy()
-    # Caso o arquivo Excel tenha múltiplas abas e tenha lido outra, garante limpeza dos cabeçalhos
     df_cons.columns = [
         unicodedata.normalize('NFKD', str(c)).encode('ASCII', 'ignore').decode('utf-8').strip().upper().replace(' ', '_')
         for c in df_cons.columns
     ]
 
-    # 1. Coluna de Quantidade de Produtos / O.S. (igual à TV: 'QTD' e 'PRODUTO')
     col_qtd = next((c for c in df_cons.columns if 'QTD' in c and ('PRODUTO' in c or 'OS' in c or 'SERV' in c)), None)
     if not col_qtd:
         col_qtd = next((c for c in df_cons.columns if c in ['QTD', 'QUANTIDADE', 'PRODUTOS', 'QTD_PRODUTOS', 'OS', 'TOTAL_OS']), None)
@@ -220,7 +218,6 @@ def processar_planilha_consultivo(df_cons_raw, df_aniel, data_ref_str):
     else:
         df_cons['QTD_PRODUTOS_CALC'] = 1
 
-    # 2. Coluna de Supervisor e Base
     col_sup = next((c for c in df_cons.columns if 'SUPERV' in c), None)
     col_base = next((c for c in df_cons.columns if any(k in c for k in ['PROJETO', 'BASE', 'REGIONAL', 'CIDADE', 'UNIDADE'])), None)
 
@@ -235,10 +232,8 @@ def processar_planilha_consultivo(df_cons_raw, df_aniel, data_ref_str):
 
     df_cons['BASE_CLEAN'] = bases_list
     df_cons['SUPERVISOR_CLEAN'] = sups_list
-
     df_cards = df_cons[df_cons['BASE_CLEAN'] != "DESCARTADO"].copy()
 
-    # 3. Coluna de Contrato (para contagem de contratos únicos como na TV)
     col_contrato_cons = next((c for c in df_cards.columns if 'CONTRATO' in c or 'OS' in c or 'O.S' in c or 'PEDIDO' in c or 'PROPOSTA' in c), None)
 
     def count_contracts(df_x):
@@ -251,7 +246,6 @@ def processar_planilha_consultivo(df_cons_raw, df_aniel, data_ref_str):
                 return int(s_c.nunique())
         return int(len(df_x))
 
-    # 4. Datas e Calendário (exatamente como nas Telas 5 e 6 da TV)
     try:
         hoje_ref = datetime.strptime(str(data_ref_str).strip(), "%d/%m/%Y")
     except Exception:
@@ -267,7 +261,7 @@ def processar_planilha_consultivo(df_cons_raw, df_aniel, data_ref_str):
     dias_uteis_passados = 0
     for d in range(1, num_dias + 1):
         data_loop = datetime(ano, mes, d)
-        if data_loop.weekday() != 6:  # Exclui domingos
+        if data_loop.weekday() != 6:
             total_dias_uteis_mes += 1
             if data_loop < hoje_meia_noite:
                 dias_uteis_passados += 1
@@ -294,14 +288,10 @@ def processar_planilha_consultivo(df_cons_raw, df_aniel, data_ref_str):
     else:
         df_cards['DATA_OBJ'] = hoje_meia_noite
 
-    hoje_contratos = {}
-    hoje_produtos = {}
-    proj_contratos_mes = {}
-    proj_produtos_mes = {}
-    acum_contratos_mes = {}
-    acum_produtos_mes = {}
-    historico_diario_prod = {}
-    detalhe_supervisores = {}
+    hoje_contratos, hoje_produtos = {}, {}
+    proj_contratos_mes, proj_produtos_mes = {}, {}
+    acum_contratos_mes, acum_produtos_mes = {}, {}
+    historico_diario_prod, detalhe_supervisores = {}, {}
 
     for b_k in ["NET-ABCDM", "NET-Guarulhos", "NET-LESTE"]:
         df_b = df_cards[df_cards['BASE_CLEAN'] == b_k].copy()
@@ -316,7 +306,6 @@ def processar_planilha_consultivo(df_cons_raw, df_aniel, data_ref_str):
             detalhe_supervisores[b_k] = {}
             continue
 
-        # Filtra registros do mês de referência
         df_mes = df_b[(df_b['DATA_OBJ'].notna()) & (df_b['DATA_OBJ'].dt.year == ano) & (df_b['DATA_OBJ'].dt.month == mes)].copy()
         if df_mes.empty:
             df_mes = df_b.copy()
@@ -332,7 +321,6 @@ def processar_planilha_consultivo(df_cons_raw, df_aniel, data_ref_str):
         prod_passado = int(df_passado['QTD_PRODUTOS_CALC'].sum()) if not df_passado.empty else 0
         cont_passado = count_contracts(df_passado) if not df_passado.empty else 0
 
-        # Regra de Projeção da TV (Tela 5): media_diaria do passado * total_dias_uteis_mes
         if dias_uteis_passados > 0 and prod_passado > 0:
             media_prod = prod_passado / dias_uteis_passados
             proj_p = int(round(media_prod * total_dias_uteis_mes))
@@ -357,14 +345,12 @@ def processar_planilha_consultivo(df_cons_raw, df_aniel, data_ref_str):
         acum_contratos_mes[b_k] = tot_cont_mes
         acum_produtos_mes[b_k] = tot_prod_mes
 
-        # Histórico diário para sincronizar com o Sheets
         mapa_d = {}
         for dt_val, grp in df_mes.groupby('DATA_OBJ'):
             if pd.notna(dt_val):
                 mapa_d[dt_val.strftime("%d/%m/%Y")] = int(grp['QTD_PRODUTOS_CALC'].sum())
         historico_diario_prod[b_k] = mapa_d
 
-        # Detalhamento por supervisor (Telas 5 e 6 da TV)
         sup_dict = {}
         for s_clean, grp_s in df_mes.groupby('SUPERVISOR_CLEAN'):
             grp_s_hoje = df_hoje[df_hoje['SUPERVISOR_CLEAN'] == s_clean] if not df_hoje.empty else pd.DataFrame()
@@ -391,13 +377,9 @@ def processar_planilha_consultivo(df_cons_raw, df_aniel, data_ref_str):
     }
 
 # ==============================================================================
-# FUNÇÃO UNIFICADA DE CÁLCULO DE MÉTRICAS (USADA NO PASSO 2 E NO PASSO 3)
+# FUNÇÃO UNIFICADA DE CÁLCULO DE MÉTRICAS
 # ==============================================================================
 def calcular_metricas_completas(df_sub_raw, montados, df_base_bruta=None):
-    """
-    Calcula todas as métricas de produtividade, quebras, ND, GPON, Migração,
-    Retorno WO (por contrato único) e PME (por contrato único).
-    """
     if not isinstance(df_sub_raw, pd.DataFrame) or df_sub_raw.empty:
         return {
             "tot_os": 0, "os_aberta": 0, "produtivo": 0, "quebra_geral": 0, "pontos": 0,
@@ -631,13 +613,11 @@ def calcular_projecao_os_base(base_proj, dias_uteis_mes=25, os_hoje=None, data_h
 def calcular_projecao_consultivo_base(base_proj, dias_uteis_mes=25, consultivo_hoje=None, data_hoje_str=None):
     base_norm = normalizar_nome_base(base_proj)
     
-    # 1. Usa diretamente a projeção calculada pela regra da TV (Tela 5) se o arquivo foi carregado
     if "consultivo_proj_produtos" in st.session_state and base_norm in st.session_state["consultivo_proj_produtos"]:
         proj_tv = int(st.session_state["consultivo_proj_produtos"][base_norm])
         dias_pass = max(1, st.session_state.get("consultivo_dias_passados", 1))
         return proj_tv, proj_tv / max(1, dias_uteis_mes), dias_pass
 
-    # 2. Fallback: lê do Google Sheets ignorando valores distorcidos
     df_c = obter_df_historico_consultivo().copy()
     if not df_c.empty and "Base" in df_c.columns:
         df_c["_base_norm_"] = df_c["Base"].apply(normalizar_nome_base)
@@ -715,7 +695,117 @@ def carregar_dicionarios_sheets():
 
 BAIXAS_DICT, PONTOS_DICT, DESC_OS_DICT = carregar_dicionarios_sheets()
 
-# --- FUNÇÃO ROBUSTA PARA LER E-MAIL (.MSG) E EXTRAIR TÉCNICOS E PARADOS POR SUPERVISOR ---
+# --- FUNÇÕES DE RENDERIZAÇÃO HTML PARA TOTALE_VT E MDU ---
+def renderizar_html_vt_e_mdu(vt_rows, mdu_row):
+    """Renderiza as tabelas TOTALE_VT e MDU exatamente como no layout da imagem."""
+    soma_prev_hc = 0.0
+    vt_trs = []
+    for linha_nome in LINHAS_VT:
+        dados_v = vt_rows.get(linha_nome, {})
+        p_v = dados_v.get("Parados")
+        m_v = dados_v.get("Montados")
+        hc_at = dados_v.get("HC Atuando")
+        tot_os_v = dados_v.get("Total O.S.")
+        efic_v = dados_v.get("Efic. (%)")
+        med_v = dados_v.get("Média O.S.")
+        cons_v = dados_v.get("Cons.")
+        hc_ini = dados_v.get("HC Inicial")
+        prev_hc = dados_v.get("Prev. HC")
+        
+        if prev_hc is not None and str(prev_hc).strip() != "":
+            try:
+                soma_prev_hc += float(prev_hc)
+            except Exception:
+                pass
+                
+        vt_trs.append(
+            f'<tr class="tr-sup">'
+            f'<td style="text-align: left; padding-left: 8px; font-weight: bold;">{linha_nome}</td>'
+            f'<td>{fmt_br(p_v)}</td>'
+            f'<td>{fmt_br(m_v)}</td>'
+            f'<td>{fmt_br(hc_at)}</td>'
+            f'<td>{fmt_br(tot_os_v)}</td>'
+            f'<td>{fmt_br(efic_v, 1) + "%" if fmt_br(efic_v, 1) != "" else ""}</td>'
+            f'<td>{fmt_br(med_v, 1)}</td>'
+            f'<td>{fmt_br(cons_v)}</td>'
+            f'<td>{fmt_br(hc_ini, 1)}</td>'
+            f'<td class="td-vt-prev">{fmt_br(prev_hc, 2)}</td>'
+            f'</tr>'
+        )
+        
+    soma_prev_str = fmt_br(soma_prev_hc, 2) if soma_prev_hc > 0 else ""
+    vt_trs.append(
+        f'<tr>'
+        f'<td colspan="9" style="border: none; background: transparent;"></td>'
+        f'<td class="td-vt-prev" style="font-weight: 900; border-top: 2px solid #145a32;">{soma_prev_str}</td>'
+        f'</tr>'
+    )
+
+    html_vt = f"""
+    <div style="max-width: 680px; margin-top: 10px;">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th class="th-vt-title">TOTALE_VT</th>
+                    <th class="th-vt-dark">Parados</th>
+                    <th class="th-vt-dark">Montados</th>
+                    <th class="th-vt-dark">HC<br>Atuando</th>
+                    <th class="th-vt-dark">Total<br>O.S.</th>
+                    <th class="th-vt-dark">Efic.<br>(%)</th>
+                    <th class="th-vt-dark">Media<br>O.S.</th>
+                    <th class="th-vt-cons">Cons.</th>
+                    <th class="th-vt-dark">HC<br>Inicial</th>
+                    <th class="th-vt-prev">Prev.<br>HC</th>
+                </tr>
+            </thead>
+            <tbody>
+                {"".join(vt_trs)}
+            </tbody>
+        </table>
+    </div>
+    """
+
+    m_p = mdu_row.get("Parados")
+    m_m = mdu_row.get("Montados")
+    m_ini = mdu_row.get("Iniciados")
+    m_exec = mdu_row.get("O.S. Exec")
+    m_toa = mdu_row.get("O.S. TOA")
+    m_med = mdu_row.get("Média O.S.")
+    m_proj = mdu_row.get("Proj.")
+
+    html_mdu = f"""
+    <div style="max-width: 560px; margin-top: 8px;">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th class="th-mdu-title">MDU</th>
+                    <th class="th-vt-dark">Parados</th>
+                    <th class="th-vt-dark">Montados</th>
+                    <th class="th-vt-dark">Iniciados</th>
+                    <th class="th-vt-dark">O.S.<br>Exec</th>
+                    <th class="th-vt-dark">O.S.<br>TOA</th>
+                    <th class="th-vt-dark">Média<br>O.S.</th>
+                    <th class="th-vt-dark">Proj.</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="tr-sup" style="font-weight: bold;">
+                    <td style="background-color: #f2f4f4;"></td>
+                    <td>{fmt_br(m_p)}</td>
+                    <td>{fmt_br(m_m)}</td>
+                    <td>{fmt_br(m_ini)}</td>
+                    <td>{fmt_br(m_exec)}</td>
+                    <td>{fmt_br(m_toa)}</td>
+                    <td>{fmt_br(m_med, 1)}</td>
+                    <td>{fmt_br(m_proj)}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    """
+    return html_vt + html_mdu
+
+# --- FUNÇÃO ROBUSTA PARA LER E-MAIL (.MSG) ---
 def processar_arquivo_msg(up_msg):
     up_msg.seek(0)
     raw_bytes = up_msg.read()
@@ -855,13 +945,13 @@ if df_historico_previas is not None and not df_historico_previas.empty and "Data
     opcoes_menu_data = ["📌 Sessão Atual (Arquivos Enviados)"] + datas_disponiveis
     escolha_menu = st.sidebar.selectbox("Selecionar Data da Prévia:", opcoes_menu_data)
     if escolha_menu == "📌 Sessão Atual (Arquivos Enviados)":
-        data_selecionada = st.session_state.get("data_formatada_ativa", st.session_state.get("data_formatada", datas_disponiveis[0] if datas_disponiveis else "03/11/2026"))
+        data_selecionada = st.session_state.get("data_formatada_ativa", st.session_state.get("data_formatada", datas_disponiveis[0] if datas_disponiveis else "23/11/2026"))
         modo_historico_salvo = False
     else:
         data_selecionada = escolha_menu
         modo_historico_salvo = True
 else:
-    data_selecionada = st.session_state.get("data_formatada_ativa", st.session_state.get("data_formatada", "03/11/2026"))
+    data_selecionada = st.session_state.get("data_formatada_ativa", st.session_state.get("data_formatada", "23/11/2026"))
     modo_historico_salvo = False
 
 def ler_arquivo_seguro(uploaded_file, prefer_sheet=None):
@@ -1009,7 +1099,6 @@ if st.session_state["pagina_atual"] == "1. Upload de Arquivos":
 
                     data_ref_proc = st.session_state.get("data_formatada_ativa", datetime.now().strftime("%d/%m/%Y"))
 
-                    # --- PROCESSAMENTO DO CONSULTIVO COM A LÓGICA DA TV (TELAS 5, 6 e 18) ---
                     if up_consultivo is not None:
                         df_cons = ler_arquivo_seguro(up_consultivo, prefer_sheet="CONSULTIVO")
                         res_cons = processar_planilha_consultivo(df_cons, df_aniel, data_ref_proc)
@@ -1223,7 +1312,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
     if st.session_state.df_valido is None:
         st.warning("⚠️ Carregue os arquivos primeiro no Passo 1.")
     else:
-        data_formatada = st.session_state.get("data_formatada_ativa", "03/11/2026")
+        data_formatada = st.session_state.get("data_formatada_ativa", "23/11/2026")
         try:
             data_base_ref = datetime.strptime(data_formatada, "%d/%m/%Y")
         except Exception:
@@ -1253,7 +1342,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 for t_str in email_tecnicos_lista:
                     st.write(f"• {t_str}")
 
-        tabs = st.tabs(["ABCDM", "Guarulhos", "Leste"])
+        tabs = st.tabs(["ABCDM", "Guarulhos", "Leste", "TOTALE_VT & MDU"])
         totais_bases_calc = {}
 
         for i, item in enumerate(bases_config):
@@ -1325,7 +1414,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     totais_bases_calc[b_proj] = {"montados": int(soma_m_base), "parados": int(soma_p_base)}
                 
                 with c2:
-                    meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=11800 if "ABCDM" in b_proj else 12200, step=100, key=f"inp_meta_os_{b_proj}")
+                    meta_os_val = st.number_input(f"Meta O.S. Mês ({b_label})", value=10000 if "ABCDM" in b_proj else (10700 if "Guarulhos" in b_proj else 10300), step=100, key=f"inp_meta_os_{b_proj}")
                     df_b_temp = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()]
                     if "Tipo de Serviço" in df_b_temp.columns:
                         df_b_temp = df_b_temp[~eh_retorno_credenciada(df_b_temp["Tipo de Serviço"])]
@@ -1334,9 +1423,7 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     st.markdown(f"**Projeção de O.S. (Mês):**\n### {fmt_br(proj_os_val)}")
 
                 with c3:
-                    # Meta padrão de consultivo (ex: 350 por supervisor como na TV ou editável)
-                    qtd_sups_validos = max(1, len([s for s in sups_base if "APOIO" not in s.upper()]))
-                    meta_cons_padrao = int(qtd_sups_validos * 350)
+                    meta_cons_padrao = int(soma_m_base * 8) if soma_m_base > 0 else 592
                     meta_cons_input = st.number_input(
                         f"Meta do Consultivo ({b_label})", 
                         value=int(st.session_state.get(f"inp_meta_c_{b_proj}", meta_cons_padrao)), 
@@ -1359,6 +1446,53 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                     tot_prod_mes_real = int(consultivo_acum_prod_mes.get(b_proj, os_consult_val))
                     st.caption(f"📌 Acumulado Real no Mês: **{fmt_br(tot_cons_mes_real)}** contratos | **{fmt_br(tot_prod_mes_real)}** produtos/O.S.")
 
+        # --- ABA 4: TOTALE_VT E MDU (CAMPOS EM BRANCO PARA PREENCHIMENTO NA HORA) ---
+        with tabs[3]:
+            st.markdown("##### 🏗️ 1. Preenchimento TOTALE_VT (Deixe em branco se não houver)")
+            st.caption("Preencha os valores do dia. Todos os campos iniciam em branco e serão salvos na aba `Previas_VT` do Google Sheets.")
+            
+            for linha_vt in LINHAS_VT:
+                st.markdown(f"**{linha_vt}**")
+                c_vt = st.columns(9)
+                with c_vt[0]:
+                    st.number_input("Parados", value=None, min_value=0, step=1, placeholder="", key=f"vt_{linha_vt}_Parados")
+                with c_vt[1]:
+                    st.number_input("Montados", value=None, min_value=0, step=1, placeholder="", key=f"vt_{linha_vt}_Montados")
+                with c_vt[2]:
+                    st.number_input("HC Atuando", value=None, min_value=0, step=1, placeholder="", key=f"vt_{linha_vt}_HC_Atuando")
+                with c_vt[3]:
+                    st.number_input("Total O.S.", value=None, min_value=0, step=1, placeholder="", key=f"vt_{linha_vt}_Total_OS")
+                with c_vt[4]:
+                    st.number_input("Efic. (%)", value=None, min_value=0.0, max_value=100.0, step=0.1, format="%.1f", placeholder="", key=f"vt_{linha_vt}_Efic")
+                with c_vt[5]:
+                    st.number_input("Média O.S.", value=None, min_value=0.0, step=0.1, format="%.1f", placeholder="", key=f"vt_{linha_vt}_Media_OS")
+                with c_vt[6]:
+                    st.number_input("Cons.", value=None, min_value=0, step=1, placeholder="", key=f"vt_{linha_vt}_Cons")
+                with c_vt[7]:
+                    st.number_input("HC Inicial", value=None, min_value=0.0, step=0.5, format="%.1f", placeholder="", key=f"vt_{linha_vt}_HC_Inicial")
+                with c_vt[8]:
+                    st.number_input("Prev. HC", value=None, min_value=0.0, step=0.5, format="%.2f", placeholder="", key=f"vt_{linha_vt}_Prev_HC")
+
+            st.markdown("---")
+            st.markdown("##### 🏢 2. Preenchimento MDU (Deixe em branco se não houver)")
+            st.caption("Preencha os valores do dia. Todos os campos iniciam em branco e serão salvos na aba `Previas_MDU` do Google Sheets.")
+            
+            c_mdu = st.columns(7)
+            with c_mdu[0]:
+                st.number_input("Parados", value=None, min_value=0, step=1, placeholder="", key="mdu_Parados")
+            with c_mdu[1]:
+                st.number_input("Montados", value=None, min_value=0, step=1, placeholder="", key="mdu_Montados")
+            with c_mdu[2]:
+                st.number_input("Iniciados", value=None, min_value=0, step=1, placeholder="", key="mdu_Iniciados")
+            with c_mdu[3]:
+                st.number_input("O.S. Exec", value=None, min_value=0, step=1, placeholder="", key="mdu_OS_Exec")
+            with c_mdu[4]:
+                st.number_input("O.S. TOA", value=None, min_value=0, step=1, placeholder="", key="mdu_OS_TOA")
+            with c_mdu[5]:
+                st.number_input("Média O.S.", value=None, min_value=0.0, step=0.1, format="%.1f", placeholder="", key="mdu_Media_OS")
+            with c_mdu[6]:
+                st.number_input("Proj.", value=None, min_value=0, step=1, placeholder="", key="mdu_Proj")
+
         st.markdown("---")
         
         if st.button("📊 Sincronizar Google Sheets e Gerar Prévia Executiva", type="primary"):
@@ -1375,7 +1509,6 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
 
                 for item in bases_config:
                     b_proj = item["projeto"]
-                    b_label = item["label"]
                     df_b = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()]
                     if "Tipo de Serviço" in df_b.columns:
                         df_b = df_b[~eh_retorno_credenciada(df_b["Tipo de Serviço"])]
@@ -1416,644 +1549,4 @@ elif st.session_state["pagina_atual"] == "2. Dados Operacionais por Base":
                 for item in bases_config:
                     b_proj = item["projeto"]
                     base_norm = normalizar_nome_base(b_proj)
-                    mapa_d_base = hist_arq_all.get(base_norm, {str(data_formatada): int(consultivo_os_hoje_dict.get(b_proj, 0))})
-
-                    for dt_k, qtd_c_val in mapa_d_base.items():
-                        if not df_cons_sheet.empty and "Data" in df_cons_sheet.columns and "Base" in df_cons_sheet.columns:
-                            df_cons_sheet["_base_norm_"] = df_cons_sheet["Base"].apply(normalizar_nome_base).str.upper()
-                            df_cons_sheet = df_cons_sheet[~(
-                                (df_cons_sheet["Data"].astype(str).str.strip() == str(dt_k).strip()) & 
-                                (df_cons_sheet["_base_norm_"] == base_norm.upper())
-                            )]
-                            if "_base_norm_" in df_cons_sheet.columns:
-                                df_cons_sheet = df_cons_sheet.drop(columns=["_base_norm_"])
-
-                        nova_c = pd.DataFrame([{
-                            "Data": str(dt_k),
-                            "Base": base_norm,
-                            "Qtd_Consultivo": int(qtd_c_val)
-                        }])
-                        df_cons_sheet = pd.concat([df_cons_sheet, nova_c], ignore_index=True)
-
-                conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_Consultivo", data=df_cons_sheet)
-
-                # 3. ATUALIZAR ABA 'Config_Equipe' e 'Historico_Equipe'
-                linhas_config_equipe = []
-                linhas_nova_hist_eq = []
-                for item in bases_config:
-                    b_proj = item["projeto"]
-                    b_label = item["label"]
-                    sups_b = st.session_state.supervisores_por_base.get(b_proj, [])
-                    for s in sups_b:
-                        m_s = int(st.session_state.get(f"m_{b_proj}_{s}", 20))
-                        p_s = int(st.session_state.get(f"p_{b_proj}_{s}", 0))
-                        linhas_config_equipe.append({"Base": b_proj, "Supervisor": s, "Montados": m_s, "Parados": p_s})
-                        linhas_nova_hist_eq.append({"Data": data_formatada, "Base": b_label, "Supervisor": s, "Montados": m_s, "Parados": p_s})
-
-                conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Config_Equipe", data=pd.DataFrame(linhas_config_equipe))
-                
-                try:
-                    df_hist_eq_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_Equipe")
-                    if df_hist_eq_sheet is None:
-                        df_hist_eq_sheet = pd.DataFrame(columns=["Data", "Base", "Supervisor", "Montados", "Parados"])
-                except Exception:
-                    df_hist_eq_sheet = pd.DataFrame(columns=["Data", "Base", "Supervisor", "Montados", "Parados"])
-
-                if not df_hist_eq_sheet.empty and "Data" in df_hist_eq_sheet.columns:
-                    df_hist_eq_sheet = df_hist_eq_sheet[df_hist_eq_sheet["Data"].astype(str) != str(data_formatada)]
-                    df_hist_eq_final = pd.concat([df_hist_eq_sheet, pd.DataFrame(linhas_nova_hist_eq)], ignore_index=True)
-                else:
-                    df_hist_eq_final = pd.DataFrame(linhas_nova_hist_eq)
-                conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Historico_Equipe", data=df_hist_eq_final)
-
-                # 4. ATUALIZAR ABA 'Previas_Diarias'
-                try:
-                    df_previas_sheet = conn.read(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias")
-                    if df_previas_sheet is None:
-                        df_previas_sheet = pd.DataFrame()
-                except Exception:
-                    df_previas_sheet = pd.DataFrame()
-
-                novas_linhas_previa = []
-                dias_uteis = st.session_state.get("dias_uteis_auto", 25)
-                df_full_ref = st.session_state.get("df_aniel_full")
-
-                for item in bases_config:
-                    b_label = item["label"]
-                    b_proj = item["projeto"]
-                    df_b_all = st.session_state.df_valido[st.session_state.df_valido["Projeto"].str.upper() == b_proj.upper()].copy()
-                    df_b_bruta = df_full_ref[df_full_ref["Projeto"].str.upper() == b_proj.upper()].copy() if (df_full_ref is not None and not df_full_ref.empty and "Projeto" in df_full_ref.columns) else df_b_all
-                    
-                    t_base = totais_bases_calc.get(b_proj, {"montados": 65, "parados": 0})
-                    m_base = int(t_base["montados"])
-                    p_base = int(t_base["parados"])
-                    meta_os_b = int(st.session_state.get(f"inp_meta_os_{b_proj}", 11800))
-                    meta_c_b = int(st.session_state.get(f"inp_meta_c_{b_proj}", 1050))
-                    hoje_c_b = int(consultivo_totais.get(b_proj, 0))
-                    os_consult_b = int(consultivo_os_hoje_dict.get(b_proj, hoje_c_b * 2))
-                    
-                    res_b = calcular_metricas_completas(df_b_all, m_base, df_b_bruta)
-                    rota_inicial_b = int(st.session_state.get(f"inp_rota_{b_proj}", img_os_dict.get(b_proj, 529)))
-                    ganho_b = max(0, res_b["tot_os"] - rota_inicial_b)
-
-                    proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
-                    proj_c_b, _, _ = calcular_projecao_consultivo_base(b_proj, dias_uteis, os_consult_b, data_formatada)
-                    os_sem_consult_val = int(round(res_b["proj_dia"] - os_consult_b, 0))
-
-                    novas_linhas_previa.append({
-                        "Data": data_formatada,
-                        "Base": b_label,
-                        "Parados": p_base,
-                        "Montados": m_base,
-                        "Meta O.S.": meta_os_b,
-                        "Projeção O.S.": proj_os_b,
-                        "Meta Consultivo": meta_c_b,
-                        "Projeção Consultivo": proj_c_b,
-                        "Hoje Consultivo": hoje_c_b,
-                        "O.S. Consultivo": os_consult_b,
-                        "Total O.S.": res_b["tot_os"],
-                        "O.S. Aberta": res_b["os_aberta"],
-                        "Pontos": res_b["pontos"],
-                        "Efic (%)": res_b["efic"],
-                        "Média O.S.": res_b["media_os"],
-                        "O.S. Exec. (Proj)": res_b["proj_dia"],
-                        "O.S. Sem Consult": os_sem_consult_val,
-                        "Quebra INS (%)": res_b["q_ins"],
-                        "Quebra SERV (%)": res_b["q_serv"],
-                        "Quebra ND (%)": res_b["q_nd"],
-                        "ND": res_b["tot_nd"],
-                        "O.S. Canc.": res_b["os_canc"],
-                        "Saiu TOA": res_b["saiu_toa"],
-                        "Ganho O.S.": ganho_b,
-                        "GPON Total": res_b["tot_gpon"],
-                        "GPON Quebra (%)": res_b["q_gpon"],
-                        "Migração Total": res_b["tot_mig"],
-                        "Migração Quebra (%)": res_b["q_mig"],
-                        "Migração Canc.": res_b["canc_mig"],
-                        "Retorno WO": res_b["retorno_wo"],
-                        "PME WO": res_b["tot_pme"],
-                        "PME Quebra (%)": res_b["q_pme"],
-                        "PME Canc.": res_b["canc_pme"]
-                    })
-
-                df_nova_previa = pd.DataFrame(novas_linhas_previa)
-                
-                if not df_previas_sheet.empty and "Data" in df_previas_sheet.columns and "Base" in df_previas_sheet.columns:
-                    df_previas_sheet = df_previas_sheet[
-                        ~((df_previas_sheet["Data"].astype(str) == str(data_formatada)) & 
-                          (df_previas_sheet["Base"].isin([b["label"] for b in bases_config])))
-                    ]
-                    df_previa_final = pd.concat([df_previas_sheet, df_nova_previa], ignore_index=True)
-                else:
-                    df_previa_final = df_nova_previa
-
-                conn.update(spreadsheet=GOOGLE_SHEET_URL, worksheet="Previas_Diarias", data=df_previa_final)
-                st.cache_data.clear()
-                st.success("✅ Configurações salvas no Sheets, histórico atualizado e prévia sincronizada com sucesso!")
-                
-            except Exception as e:
-                st.error(f"Erro ao conectar ou escrever no Google Sheets: {e}")
-            
-            st.session_state["ir_para_passo_3_ativo"] = True
-            st.rerun()
-
-# ==============================================================================
-# PÁGINA 3: VISUALIZAÇÃO DA PRÉVIA
-# ==============================================================================
-elif st.session_state["pagina_atual"] == "3. Visualização da Prévia":
-    st.subheader("📊 Passo 3: Apresentação da Prévia Diária - Diretoria")
-
-    data_formatada = data_selecionada
-
-    def gerar_cabecalho_html():
-        return f"""
-        <table class="custom-table">
-            <thead>
-                <tr>
-                    <th rowspan="2" class="th-data">{data_formatada}</th>
-                    <th rowspan="2" class="th-data">Parados</th>
-                    <th rowspan="2" class="th-data col-destaque-amarelo">Montados</th>
-                    <th colspan="2" class="th-qtd-os">QTDE. DE O.S.</th>
-                    <th colspan="4" class="th-consult">CONSULTIVO</th>
-                    <th colspan="10" class="th-prod">PRODUTIVIDADE (Projeção)</th>
-                    <th rowspan="2" class="th-prod">ND</th>
-                    <th colspan="2" class="th-quebra-claro">QUEBRA CLARO</th>
-                    <th rowspan="2" class="th-ganho">GANHO<br>O.S.</th>
-                    <th colspan="2" class="th-gpon">GPON</th>
-                    <th colspan="3" class="th-mig">MIGRAÇÃO</th>
-                    <th rowspan="2" class="th-retorno">RETORNO<br>WO</th>
-                    <th colspan="3" class="th-pme">PME</th>
-                </tr>
-                <tr>
-                    <th class="th-qtd-os">Meta</th>
-                    <th class="th-qtd-os">Projeção</th>
-                    <th class="th-consult">Meta</th>
-                    <th class="th-consult">Projeção</th>
-                    <th class="th-consult">Hoje</th>
-                    <th class="th-consult">O.S</th>
-                    <th class="th-prod">TOTAL O.S.</th>
-                    <th class="th-prod">O.S. ABERTA</th>
-                    <th class="th-prod">Pontos</th>
-                    <th class="th-prod">Efic. (%)</th>
-                    <th class="th-prod col-destaque-azul">Média O.S.</th>
-                    <th class="th-prod">O.S. Exec.</th>
-                    <th class="th-prod col-destaque-amarelo">O.S Sem Consult</th>
-                    <th class="th-prod">Quebra INS (%)</th>
-                    <th class="th-prod">Quebra SERV (%)</th>
-                    <th class="th-prod">Quebra ND (%)</th>
-                    <th class="th-quebra-claro">O.S. Canc.</th>
-                    <th class="th-quebra-claro">Saiu TOA</th>
-                    <th class="th-gpon">Total O.S.</th>
-                    <th class="th-gpon">Quebra</th>
-                    <th class="th-mig">Total O.S.</th>
-                    <th class="th-mig">Quebra</th>
-                    <th class="th-mig">Canc.</th>
-                    <th class="th-pme">WO</th>
-                    <th class="th-pme">Quebra</th>
-                    <th class="th-pme">Canc.</th>
-                </tr>
-            </thead>
-            <tbody>
-        """
-
-    if modo_historico_salvo or st.session_state.df_valido is None:
-        df_dia = pd.DataFrame()
-        if df_historico_previas is not None and not df_historico_previas.empty and "Data" in df_historico_previas.columns:
-            df_dia = df_historico_previas[df_historico_previas["Data"].astype(str).str.strip() == str(data_formatada).strip()].copy()
-
-        if df_dia.empty:
-            st.warning(f"⚠️ Nenhum registro encontrado na aba `Previas_Diarias` para a data **{data_formatada}**.")
-        else:
-            tabela_html = [gerar_cabecalho_html()]
-            g_parados = 0; g_montados = 0; g_meta_os = 0; g_proj_os = 0
-            g_meta_cons = 0; g_proj_cons = 0; g_hoje_cons = 0; g_os_cons = 0
-            g_tot_os = 0; g_aberta = 0; g_pontos = 0; g_efic_soma = 0.0
-            g_proj_dia = 0; g_os_sem_c = 0
-            g_q_ins_soma = 0.0; g_q_serv_soma = 0.0; g_q_nd_soma = 0.0; g_nd = 0
-            g_canc = 0; g_saiu_toa = 0; g_ganho = 0; g_gpon = 0; g_q_gpon_soma = 0.0
-            g_mig = 0; g_q_mig_soma = 0.0; g_mig_canc = 0; g_retorno = 0
-            g_pme = 0; g_q_pme_soma = 0.0; g_pme_canc = 0
-            qtd_b = 0
-
-            for item in bases_config:
-                b_label = item["label"]
-                row_b = df_dia[df_dia["Base"].astype(str).str.upper().str.strip() == b_label.upper()]
-                if not row_b.empty:
-                    r = row_b.iloc[-1]
-                    p_b = pd.to_numeric(r.get("Parados", 0), errors="coerce") or 0
-                    m_b = pd.to_numeric(r.get("Montados", 0), errors="coerce") or 0
-                    meta_os = pd.to_numeric(r.get("Meta O.S.", 0), errors="coerce") or 0
-                    proj_os = pd.to_numeric(r.get("Projeção O.S.", 0), errors="coerce") or 0
-                    meta_c = pd.to_numeric(r.get("Meta Consultivo", 0), errors="coerce") or 0
-                    proj_c = pd.to_numeric(r.get("Projeção Consultivo", 0), errors="coerce") or 0
-                    hoje_c = pd.to_numeric(r.get("Hoje Consultivo", 0), errors="coerce") or 0
-                    os_c = pd.to_numeric(r.get("O.S. Consultivo", 0), errors="coerce") or 0
-                    tot_os = pd.to_numeric(r.get("Total O.S.", 0), errors="coerce") or 0
-                    aberta = pd.to_numeric(r.get("O.S. Aberta", 0), errors="coerce") or 0
-                    pts = pd.to_numeric(r.get("Pontos", 0), errors="coerce") or 0
-                    efic = pd.to_numeric(r.get("Efic (%)", 0), errors="coerce") or 0.0
-                    med_os = pd.to_numeric(r.get("Média O.S.", 0), errors="coerce") or 0.0
-                    os_exec = pd.to_numeric(r.get("O.S. Exec. (Proj)", 0), errors="coerce") or 0
-                    os_sem_c = pd.to_numeric(r.get("O.S. Sem Consult", 0), errors="coerce") or 0
-                    q_ins = pd.to_numeric(r.get("Quebra INS (%)", 0), errors="coerce") or 0.0
-                    q_serv = pd.to_numeric(r.get("Quebra SERV (%)", 0), errors="coerce") or 0.0
-                    q_nd = pd.to_numeric(r.get("Quebra ND (%)", 0), errors="coerce") or 0.0
-                    nd_val = pd.to_numeric(r.get("ND", 0), errors="coerce") or 0
-                    canc = pd.to_numeric(r.get("O.S. Canc.", 0), errors="coerce") or 0
-                    saiu = pd.to_numeric(r.get("Saiu TOA", 0), errors="coerce") or 0
-                    ganho = pd.to_numeric(r.get("Ganho O.S.", 0), errors="coerce") or 0
-                    gpon_t = pd.to_numeric(r.get("GPON Total", 0), errors="coerce") or 0
-                    gpon_q = pd.to_numeric(r.get("GPON Quebra (%)", 0), errors="coerce") or 0.0
-                    mig_t = pd.to_numeric(r.get("Migração Total", 0), errors="coerce") or 0
-                    mig_q = pd.to_numeric(r.get("Migração Quebra (%)", 0), errors="coerce") or 0.0
-                    mig_c = pd.to_numeric(r.get("Migração Canc.", 0), errors="coerce") or 0
-                    ret_wo = pd.to_numeric(r.get("Retorno WO", 0), errors="coerce") or 0
-                    pme_t = pd.to_numeric(r.get("PME WO", 0), errors="coerce") or 0
-                    pme_q = pd.to_numeric(r.get("PME Quebra (%)", 0), errors="coerce") or 0.0
-                    pme_c = pd.to_numeric(r.get("PME Canc.", 0), errors="coerce") or 0
-
-                    g_parados += p_b; g_montados += m_b; g_meta_os += meta_os; g_proj_os += proj_os
-                    g_meta_cons += meta_c; g_proj_cons += proj_c; g_hoje_cons += hoje_c; g_os_cons += os_c
-                    g_tot_os += tot_os; g_aberta += aberta; g_pontos += pts; g_efic_soma += efic
-                    g_proj_dia += os_exec; g_os_sem_c += os_sem_c
-                    g_q_ins_soma += q_ins; g_q_serv_soma += q_serv; g_q_nd_soma += q_nd; g_nd += nd_val
-                    g_canc += canc; g_saiu_toa += saiu; g_ganho += ganho
-                    g_gpon += gpon_t; g_q_gpon_soma += gpon_q
-                    g_mig += mig_t; g_q_mig_soma += mig_q; g_mig_canc += mig_c
-                    g_retorno += ret_wo; g_pme += pme_t; g_q_pme_soma += pme_q; g_pme_canc += pme_c
-                    qtd_b += 1
-
-                    tabela_html.append(
-                        f'<tr class="tr-base">'
-                        f'<td style="text-align: left; padding-left: 8px;">{b_label}</td>'
-                        f'<td>{fmt_br(p_b)}</td>'
-                        f'<td class="col-destaque-amarelo">{fmt_br(m_b)}</td>'
-                        f'<td>{fmt_br(meta_os)}</td>'
-                        f'<td class="red-text">{fmt_br(proj_os)}</td>'
-                        f'<td>{fmt_br(meta_c)}</td>'
-                        f'<td class="red-text">{fmt_br(proj_c)}</td>'
-                        f'<td>{fmt_br(hoje_c)}</td>'
-                        f'<td>{fmt_br(os_c)}</td>'
-                        f'<td>{fmt_br(tot_os)}</td>'
-                        f'<td>{fmt_br(aberta)}</td>'
-                        f'<td>{fmt_br(pts)}</td>'
-                        f'<td>{fmt_br(efic, 1)}%</td>'
-                        f'<td class="col-destaque-azul">{fmt_br(med_os, 2)}</td>'
-                        f'<td>{fmt_br(os_exec)}</td>'
-                        f'<td class="col-destaque-amarelo">{fmt_br(os_sem_c)}</td>'
-                        f'<td>{fmt_br(q_ins, 1)}%</td>'
-                        f'<td>{fmt_br(q_serv, 1)}%</td>'
-                        f'<td>{fmt_br(q_nd, 1)}%</td>'
-                        f'<td>{fmt_br(nd_val)}</td>'
-                        f'<td>{fmt_br(canc)}</td>'
-                        f'<td>{fmt_br(saiu)}</td>'
-                        f'<td>{fmt_br(ganho)}</td>'
-                        f'<td>{fmt_br(gpon_t)}</td>'
-                        f'<td>{fmt_br(gpon_q, 1)}%</td>'
-                        f'<td>{fmt_br(mig_t)}</td>'
-                        f'<td>{fmt_br(mig_q, 1)}%</td>'
-                        f'<td>{fmt_br(mig_c)}</td>'
-                        f'<td>{fmt_br(ret_wo)}</td>'
-                        f'<td>{fmt_br(pme_t)}</td>'
-                        f'<td>{fmt_br(pme_q, 1)}%</td>'
-                        f'<td>{fmt_br(pme_c)}</td>'
-                        f'</tr>'
-                    )
-
-            div_b = max(1, qtd_b)
-            g_media_os_calc = (g_proj_dia / g_montados) if g_montados > 0 else 0.0
-            tabela_html.append(
-                f'<tr class="tr-total">'
-                f'<td style="text-align: left; padding-left: 8px;">TOTAL INSTALAÇÃO</td>'
-                f'<td>{fmt_br(g_parados)}</td>'
-                f'<td class="col-destaque-amarelo">{fmt_br(g_montados)}</td>'
-                f'<td>{fmt_br(g_meta_os)}</td>'
-                f'<td class="red-text">{fmt_br(g_proj_os)}</td>'
-                f'<td>{fmt_br(g_meta_cons)}</td>'
-                f'<td class="red-text">{fmt_br(g_proj_cons)}</td>'
-                f'<td>{fmt_br(g_hoje_cons)}</td>'
-                f'<td>{fmt_br(g_os_cons)}</td>'
-                f'<td>{fmt_br(g_tot_os)}</td>'
-                f'<td>{fmt_br(g_aberta)}</td>'
-                f'<td>{fmt_br(g_pontos)}</td>'
-                f'<td>{fmt_br(g_efic_soma / div_b, 1)}%</td>'
-                f'<td class="col-destaque-azul">{fmt_br(g_media_os_calc, 2)}</td>'
-                f'<td>{fmt_br(g_proj_dia)}</td>'
-                f'<td class="col-destaque-amarelo">{fmt_br(g_os_sem_c)}</td>'
-                f'<td>{fmt_br(g_q_ins_soma / div_b, 1)}%</td>'
-                f'<td>{fmt_br(g_q_serv_soma / div_b, 1)}%</td>'
-                f'<td>{fmt_br(g_q_nd_soma / div_b, 1)}%</td>'
-                f'<td>{fmt_br(g_nd)}</td>'
-                f'<td>{fmt_br(g_canc)}</td>'
-                f'<td>{fmt_br(g_saiu_toa)}</td>'
-                f'<td>{fmt_br(g_ganho)}</td>'
-                f'<td>{fmt_br(g_gpon)}</td>'
-                f'<td>{fmt_br(g_q_gpon_soma / div_b, 1)}%</td>'
-                f'<td>{fmt_br(g_mig)}</td>'
-                f'<td>{fmt_br(g_q_mig_soma / div_b, 1)}%</td>'
-                f'<td>{fmt_br(g_mig_canc)}</td>'
-                f'<td>{fmt_br(g_retorno)}</td>'
-                f'<td>{fmt_br(g_pme)}</td>'
-                f'<td>{fmt_br(g_q_pme_soma / div_b, 1)}%</td>'
-                f'<td>{fmt_br(g_pme_canc)}</td>'
-                f'</tr></tbody></table>'
-            )
-            st.markdown("".join(tabela_html), unsafe_allow_html=True)
-
-    else:
-        # Cálculo completo em tempo real da sessão ativa
-        df_valido = st.session_state.df_valido
-        df_full_ref = st.session_state.get("df_aniel_full")
-        dias_uteis = st.session_state.get("dias_uteis_auto", 25)
-        df_config_eq_v = carregar_config_equipe()
-
-        g_parados = 0; g_montados = 0; g_meta_os = 0; g_proj_os = 0
-        g_meta_cons = 0; g_proj_cons = 0; g_hoje_cons = 0; g_os_cons = 0
-        g_tot_os = 0; g_aberta = 0; g_pontos = 0; g_prod = 0; g_quebra = 0
-        g_sem_cons = 0; g_nd = 0; g_canc = 0; g_saiu_toa = 0; g_ganho = 0
-        g_gpon = 0; g_mig = 0; g_mig_canc = 0; g_retorno = 0; g_pme = 0; g_pme_canc = 0
-        g_raw_ins_q = 0; g_raw_ins_tot = 0; g_raw_serv_q = 0; g_raw_serv_tot = 0
-        g_raw_nd_q = 0; g_raw_nd_tot = 0; g_raw_gpon_q = 0; g_raw_gpon_tot = 0
-        g_raw_mig_q = 0; g_raw_mig_tot = 0; g_raw_pme_q = 0; g_raw_pme_tot = 0
-
-        metricas_bases = {}
-        consultivo_totais = st.session_state.get("consultivo_totais", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
-        consultivo_os_hoje_dict = st.session_state.get("consultivo_os_hoje", {"NET-ABCDM": 0, "NET-Guarulhos": 0, "NET-LESTE": 0})
-
-        for item in bases_config:
-            b_label = item["label"]
-            b_proj = item["projeto"]
-            
-            df_b_all = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()].copy() if isinstance(df_valido, pd.DataFrame) and "Projeto" in df_valido.columns else pd.DataFrame()
-            df_b_bruta = df_full_ref[df_full_ref["Projeto"].str.upper() == b_proj.upper()].copy() if (df_full_ref is not None and not df_full_ref.empty and "Projeto" in df_full_ref.columns) else df_b_all
-            
-            df_b_eq_v = df_config_eq_v[df_config_eq_v["Base"].astype(str).str.upper() == b_proj.upper()] if not df_config_eq_v.empty else pd.DataFrame()
-            
-            sups_base = st.session_state.supervisores_por_base.get(b_proj, [])
-            m_base = sum([int(st.session_state.get(f"m_{b_proj}_{s}", 20)) for s in sups_base])
-            if m_base <= 0:
-                m_base = int(df_b_eq_v["Montados"].sum()) if not df_b_eq_v.empty and "Montados" in df_b_eq_v.columns else 65
-            p_base = sum([int(st.session_state.get(f"p_{b_proj}_{s}", 0)) for s in sups_base])
-
-            meta_os_b = int(st.session_state.get(f"inp_meta_os_{b_proj}", 11800 if "ABCDM" in b_proj else 12200))
-            qtd_sups_validos = max(1, len([s for s in sups_base if "APOIO" not in s.upper()]))
-            meta_c_b = int(st.session_state.get(f"inp_meta_c_{b_proj}", qtd_sups_validos * 350))
-            hoje_c_b = int(consultivo_totais.get(b_proj, 0))
-            os_consult_b = int(consultivo_os_hoje_dict.get(b_proj, hoje_c_b * 2))
-            
-            res_b = calcular_metricas_completas(df_b_all, m_base, df_b_bruta)
-            
-            tot_os_previa_b = res_b["tot_os"]
-            rota_inicial_b = buscar_os_inicial_sheets(b_proj, data_formatada)
-            ganho_b = max(0, tot_os_previa_b - rota_inicial_b)
-
-            os_sem_consult_val = int(round(res_b["proj_dia"] - os_consult_b, 0))
-            res_b["os_sem_c"] = os_sem_consult_val
-
-            proj_os_b, _, _ = calcular_projecao_os_base(b_proj, dias_uteis, res_b["produtivo"], data_formatada)
-            proj_c_b, _, _ = calcular_projecao_consultivo_base(b_proj, dias_uteis, os_consult_b, data_formatada)
-
-            g_parados += p_base; g_montados += m_base; g_meta_os += meta_os_b; g_proj_os += proj_os_b
-            g_meta_cons += meta_c_b; g_proj_cons += proj_c_b; g_hoje_cons += hoje_c_b; g_os_cons += os_consult_b
-            g_tot_os += res_b["tot_os"]; g_aberta += res_b["os_aberta"]; g_pontos += res_b["pontos"]; g_prod += res_b["produtivo"]
-            g_quebra += res_b["quebra_geral"]; g_sem_cons += res_b["os_sem_c"]; g_nd += res_b["tot_nd"]
-            g_canc += res_b["os_canc"]; g_saiu_toa += res_b["saiu_toa"]; g_ganho += ganho_b
-            g_gpon += res_b["tot_gpon"]; g_mig += res_b["tot_mig"]; g_mig_canc += res_b["canc_mig"]
-            g_retorno += res_b["retorno_wo"]; g_pme += res_b["tot_pme"]; g_pme_canc += res_b["canc_pme"]
-            g_raw_ins_q += res_b["_raw_q_ins"]; g_raw_ins_tot += res_b["_raw_tot_ins"]
-            g_raw_serv_q += res_b["_raw_q_serv"]; g_raw_serv_tot += res_b["_raw_tot_serv"]
-            g_raw_nd_q += res_b["_raw_q_nd"]; g_raw_nd_tot += res_b["_raw_tot_nd"]
-            g_raw_gpon_q += res_b["_raw_q_gpon"]; g_raw_gpon_tot += res_b["_raw_tot_gpon"]
-            g_raw_mig_q += res_b["_raw_q_mig"]; g_raw_mig_tot += res_b["_raw_tot_mig"]
-            g_raw_pme_q += res_b["_raw_q_pme"]; g_raw_pme_tot += res_b["_raw_tot_pme"]
-
-            metricas_bases[b_proj] = {
-                "res": res_b, "p_base": p_base, "m_base": m_base, "meta_os": meta_os_b,
-                "proj_os": proj_os_b, "meta_c": meta_c_b, "proj_c": proj_c_b, "hoje_c": hoje_c_b,
-                "os_consult": os_consult_b, "ganho": ganho_b, "label": b_label
-            }
-
-        tabela_html = [gerar_cabecalho_html()]
-
-        for item in bases_config:
-            b_label = item["label"]
-            b_proj = item["projeto"]
-            m = metricas_bases[b_proj]
-            res = m["res"]
-            
-            tabela_html.append(
-                f'<tr class="tr-base">'
-                f'<td style="text-align: left; padding-left: 8px;">{b_label}</td>'
-                f'<td>{fmt_br(m["p_base"])}</td>'
-                f'<td class="col-destaque-amarelo">{fmt_br(m["m_base"])}</td>'
-                f'<td>{fmt_br(m["meta_os"])}</td>'
-                f'<td class="red-text">{fmt_br(m["proj_os"])}</td>'
-                f'<td>{fmt_br(m["meta_c"])}</td>'
-                f'<td class="red-text">{fmt_br(m["proj_c"])}</td>'
-                f'<td>{fmt_br(m["hoje_c"])}</td>'
-                f'<td>{fmt_br(m["os_consult"])}</td>'
-                f'<td>{fmt_br(res["tot_os"])}</td>'
-                f'<td>{fmt_br(res["os_aberta"])}</td>'
-                f'<td>{fmt_br(res["pontos"])}</td>'
-                f'<td>{fmt_br(res["efic"], 1)}%</td>'
-                f'<td class="col-destaque-azul">{fmt_br(res["media_os"], 2)}</td>'
-                f'<td>{fmt_br(res["proj_dia"])}</td>'
-                f'<td class="col-destaque-amarelo">{fmt_br(res["os_sem_c"])}</td>'
-                f'<td>{fmt_br(res["q_ins"], 1)}%</td>'
-                f'<td>{fmt_br(res["q_serv"], 1)}%</td>'
-                f'<td>{fmt_br(res["q_nd"], 1)}%</td>'
-                f'<td>{fmt_br(res["tot_nd"])}</td>'
-                f'<td>{fmt_br(res["os_canc"])}</td>'
-                f'<td>{fmt_br(res["saiu_toa"])}</td>'
-                f'<td>{fmt_br(m["ganho"])}</td>'
-                f'<td>{fmt_br(res["tot_gpon"])}</td>'
-                f'<td>{fmt_br(res["q_gpon"], 1)}%</td>'
-                f'<td>{fmt_br(res["tot_mig"])}</td>'
-                f'<td>{fmt_br(res["q_mig"], 1)}%</td>'
-                f'<td>{fmt_br(res["canc_mig"])}</td>'
-                f'<td>{fmt_br(res["retorno_wo"])}</td>'
-                f'<td>{fmt_br(res["tot_pme"])}</td>'
-                f'<td>{fmt_br(res["q_pme"], 1)}%</td>'
-                f'<td>{fmt_br(res["canc_pme"])}</td>'
-                f'</tr>'
-            )
-
-        g_den_quebra = g_quebra + g_prod
-        g_efic = (max(0.0, 1.0 - (g_quebra / g_den_quebra)) * 100) if g_den_quebra > 0 else 0.0
-        g_proj_exec_total = int(round(g_prod + (g_aberta * (g_efic / 100.0)), 0))
-        g_media_os = (g_proj_exec_total / g_montados) if g_montados > 0 else 0.0
-        g_os_sem_c_total = g_proj_exec_total - g_os_cons
-        
-        q_ins_geral = (g_raw_ins_q / g_raw_ins_tot * 100) if g_raw_ins_tot > 0 else 0.0
-        q_serv_geral = (g_raw_serv_q / g_raw_serv_tot * 100) if g_raw_serv_tot > 0 else 0.0
-        g_q_nd = (g_raw_nd_q / g_raw_nd_tot * 100) if g_raw_nd_tot > 0 else 0.0
-        g_q_gpon = (g_raw_gpon_q / g_raw_gpon_tot * 100) if g_raw_gpon_tot > 0 else 0.0
-        g_q_mig = (g_raw_mig_q / g_raw_mig_tot * 100) if g_raw_mig_tot > 0 else 0.0
-        g_q_pme = (g_raw_pme_q / g_raw_pme_tot * 100) if g_raw_pme_tot > 0 else 0.0
-
-        tabela_html.append(
-            f'<tr class="tr-total">'
-            f'<td style="text-align: left; padding-left: 8px;">TOTAL INSTALAÇÃO</td>'
-            f'<td>{fmt_br(g_parados)}</td>'
-            f'<td class="col-destaque-amarelo">{fmt_br(g_montados)}</td>'
-            f'<td>{fmt_br(g_meta_os)}</td>'
-            f'<td class="red-text">{fmt_br(g_proj_os)}</td>'
-            f'<td>{fmt_br(g_meta_cons)}</td>'
-            f'<td class="red-text">{fmt_br(g_proj_cons)}</td>'
-            f'<td>{fmt_br(g_hoje_cons)}</td>'
-            f'<td>{fmt_br(g_os_cons)}</td>'
-            f'<td>{fmt_br(g_tot_os)}</td>'
-            f'<td>{fmt_br(g_aberta)}</td>'
-            f'<td>{fmt_br(g_pontos)}</td>'
-            f'<td>{fmt_br(g_efic, 1)}%</td>'
-            f'<td class="col-destaque-azul">{fmt_br(g_media_os, 2)}</td>'
-            f'<td>{fmt_br(g_proj_exec_total)}</td>'
-            f'<td class="col-destaque-amarelo">{fmt_br(g_os_sem_c_total)}</td>'
-            f'<td>{fmt_br(q_ins_geral, 1)}%</td>'
-            f'<td>{fmt_br(q_serv_geral, 1)}%</td>'
-            f'<td>{fmt_br(g_q_nd, 1)}%</td>'
-            f'<td>{fmt_br(g_nd)}</td>'
-            f'<td>{fmt_br(g_canc)}</td>'
-            f'<td>{fmt_br(g_saiu_toa)}</td>'
-            f'<td>{fmt_br(g_ganho)}</td>'
-            f'<td>{fmt_br(g_gpon)}</td>'
-            f'<td>{fmt_br(g_q_gpon, 1)}%</td>'
-            f'<td>{fmt_br(g_mig)}</td>'
-            f'<td>{fmt_br(g_q_mig, 1)}%</td>'
-            f'<td>{fmt_br(g_mig_canc)}</td>'
-            f'<td>{fmt_br(g_retorno)}</td>'
-            f'<td>{fmt_br(g_pme)}</td>'
-            f'<td>{fmt_br(g_q_pme, 1)}%</td>'
-            f'<td>{fmt_br(g_pme_canc)}</td>'
-            f'</tr>'
-            f'</tbody>'
-            f'</table>'
-        )
-
-        st.markdown("".join(tabela_html), unsafe_allow_html=True)
-        st.markdown("<br><hr><br>", unsafe_allow_html=True)
-
-        # --- BLOCOS INDEPENDENTES POR BASE COM OS SUPERVISORES ---
-        st.markdown("### 🏢 Detalhamento Operacional Separado por Base")
-        cons_sups_all = st.session_state.get("consultivo_supervisores", {})
-
-        for item in bases_config:
-            b_label = item["label"]
-            b_proj = item["projeto"]
-            m = metricas_bases[b_proj]
-            res_b = m["res"]
-            cons_sups_base = cons_sups_all.get(b_proj, {})
-            
-            with st.expander(f"📂 Base: {b_label} (Clique para Expandir/Recolher Detalhamento)"):
-                df_b_all = df_valido[df_valido["Projeto"].str.upper() == b_proj.upper()].copy() if isinstance(df_valido, pd.DataFrame) and "Projeto" in df_valido.columns else pd.DataFrame()
-                sups_b = st.session_state.supervisores_por_base.get(b_proj, [])
-                
-                tabela_bloco_html = [
-                    gerar_cabecalho_html(),
-                    f'<tr class="tr-base">'
-                    f'<td style="text-align: left; padding-left: 8px;">{b_label}</td>'
-                    f'<td>{fmt_br(m["p_base"])}</td>'
-                    f'<td class="col-destaque-amarelo">{fmt_br(m["m_base"])}</td>'
-                    f'<td>{fmt_br(m["meta_os"])}</td>'
-                    f'<td class="red-text">{fmt_br(m["proj_os"])}</td>'
-                    f'<td>{fmt_br(m["meta_c"])}</td>'
-                    f'<td class="red-text">{fmt_br(m["proj_c"])}</td>'
-                    f'<td>{fmt_br(m["hoje_c"])}</td>'
-                    f'<td>{fmt_br(m["os_consult"])}</td>'
-                    f'<td>{fmt_br(res_b["tot_os"])}</td>'
-                    f'<td>{fmt_br(res_b["os_aberta"])}</td>'
-                    f'<td>{fmt_br(res_b["pontos"])}</td>'
-                    f'<td>{fmt_br(res_b["efic"], 1)}%</td>'
-                    f'<td class="col-destaque-azul">{fmt_br(res_b["media_os"], 2)}</td>'
-                    f'<td>{fmt_br(res_b["proj_dia"])}</td>'
-                    f'<td class="col-destaque-amarelo">{fmt_br(res_b["os_sem_c"])}</td>'
-                    f'<td>{fmt_br(res_b["q_ins"], 1)}%</td>'
-                    f'<td>{fmt_br(res_b["q_serv"], 1)}%</td>'
-                    f'<td>{fmt_br(res_b["q_nd"], 1)}%</td>'
-                    f'<td>{fmt_br(res_b["tot_nd"])}</td>'
-                    f'<td>{fmt_br(res_b["os_canc"])}</td>'
-                    f'<td>{fmt_br(res_b["saiu_toa"])}</td>'
-                    f'<td>{fmt_br(m["ganho"])}</td>'
-                    f'<td>{fmt_br(res_b["tot_gpon"])}</td>'
-                    f'<td>{fmt_br(res_b["q_gpon"], 1)}%</td>'
-                    f'<td>{fmt_br(res_b["tot_mig"])}</td>'
-                    f'<td>{fmt_br(res_b["q_mig"], 1)}%</td>'
-                    f'<td>{fmt_br(res_b["canc_mig"])}</td>'
-                    f'<td>{fmt_br(res_b["retorno_wo"])}</td>'
-                    f'<td>{fmt_br(res_b["tot_pme"])}</td>'
-                    f'<td>{fmt_br(res_b["q_pme"], 1)}%</td>'
-                    f'<td>{fmt_br(res_b["canc_pme"])}</td>'
-                    f'</tr>'
-                ]
-
-                for s in sups_b:
-                    df_s = df_b_all[df_b_all["Supervisor"] == s] if not df_b_all.empty and "Supervisor" in df_b_all.columns else pd.DataFrame()
-                    p_sup = st.session_state.get(f"p_{b_proj}_{s}", 0)
-                    m_sup = st.session_state.get(f"m_{b_proj}_{s}", 20)
-                    res_s = calcular_metricas_completas(df_s, m_sup)
-                    primeiro_nome = s.split()[0]
-                    
-                    # Busca dados do Consultivo para este supervisor (como nas Telas 5 e 6 da TV)
-                    dados_cons_s = {"contratos_hoje": 0, "produtos_hoje": 0, "produtos_mes": 0}
-                    for k_cs, val_cs in cons_sups_base.items():
-                        if k_cs.split()[0] in s.upper() or primeiro_nome in k_cs:
-                            dados_cons_s = val_cs
-                            break
-                    
-                    c_hoje_s = dados_cons_s["contratos_hoje"]
-                    os_c_hoje_s = dados_cons_s["produtos_hoje"]
-                    os_sem_c_s = int(round(res_s["proj_dia"] - os_c_hoje_s, 0))
-                    
-                    tabela_bloco_html.append(
-                        f'<tr class="tr-sup">'
-                        f'<td style="text-align: left; padding-left: 20px;">{primeiro_nome}</td>'
-                        f'<td>{fmt_br(p_sup)}</td>'
-                        f'<td class="col-destaque-amarelo">{fmt_br(m_sup)}</td>'
-                        f'<td></td><td></td>'
-                        f'<td>350</td><td>{fmt_br(dados_cons_s["produtos_mes"])}</td><td>{fmt_br(c_hoje_s)}</td><td>{fmt_br(os_c_hoje_s)}</td>'
-                        f'<td>{fmt_br(res_s["tot_os"])}</td>'
-                        f'<td>{fmt_br(res_s["os_aberta"])}</td>'
-                        f'<td>{fmt_br(res_s["pontos"])}</td>'
-                        f'<td>{fmt_br(res_s["efic"], 1)}%</td>'
-                        f'<td class="col-destaque-azul">{fmt_br(res_s["media_os"], 2)}</td>'
-                        f'<td>{fmt_br(res_s["proj_dia"])}</td>'
-                        f'<td class="col-destaque-amarelo">{fmt_br(os_sem_c_s)}</td>'
-                        f'<td>{fmt_br(res_s["q_ins"], 1)}%</td>'
-                        f'<td>{fmt_br(res_s["q_serv"], 1)}%</td>'
-                        f'<td>{fmt_br(res_s["q_nd"], 1)}%</td>'
-                        f'<td>{fmt_br(res_s["tot_nd"])}</td>'
-                        f'<td>{fmt_br(res_s["os_canc"])}</td>'
-                        f'<td>{fmt_br(res_s["saiu_toa"])}</td>'
-                        f'<td></td>'
-                        f'<td>{fmt_br(res_s["tot_gpon"])}</td>'
-                        f'<td>{fmt_br(res_s["q_gpon"], 1)}%</td>'
-                        f'<td>{fmt_br(res_s["tot_mig"])}</td>'
-                        f'<td>{fmt_br(res_s["q_mig"], 1)}%</td>'
-                        f'<td>{fmt_br(res_s["canc_mig"])}</td>'
-                        f'<td>{fmt_br(res_s["retorno_wo"])}</td>'
-                        f'<td>{fmt_br(res_s["tot_pme"])}</td>'
-                        f'<td>{fmt_br(res_s["q_pme"], 1)}%</td>'
-                        f'<td>{fmt_br(res_s["canc_pme"])}</td>'
-                        f'</tr>'
-                    )
-
-                tabela_bloco_html.append('</tbody></table>')
-                st.markdown("".join(tabela_bloco_html), unsafe_allow_html=True)
-                st.markdown("<br>", unsafe_allow_html=True)
-
-    if st.session_state.get("df_aniel_full") is not None:
-        try:
-            df_export = st.session_state["df_aniel_full"]
-            if not df_export.empty:
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                    df_export.to_excel(writer, index=False)
-                
-                st.download_button(
-                    label="📥 Baixar Planilha ANIEL Tratada (.xlsx)",
-                    data=output.getvalue(),
-                    file_name="Planilha_Tratada_Aniel.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-        except Exception:
-            pass
+                    mapa_d_base = hist_arq_all.get(base_norm
